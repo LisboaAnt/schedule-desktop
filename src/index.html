@@ -3,38 +3,84 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Calendário</title>
+    <title>Agenda</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="/main.js" defer></script>
   </head>
   <body class="theme-dark view-widget">
     <div id="app" class="shell">
-      <header class="titlebar" data-tauri-drag-region>
-        <span class="title" data-tauri-drag-region>Calendário</span>
-        <div class="titlebar-actions">
-          <button type="button" id="btn-mode" class="btn-icon" title="Alternar widget / app">
-            ⛶
-          </button>
+      <header class="titlebar">
+        <div class="titlebar-row-unified">
+          <div class="titlebar-drag" data-tauri-drag-region>
+            <span id="title-period" class="app-name" data-tauri-drag-region>—</span>
+            <span class="drag-hint" data-tauri-drag-region>Arrastar para mover</span>
+          </div>
+          <nav class="view-tabs" role="tablist" aria-label="Vista da agenda">
+            <button type="button" id="btn-prev" class="btn-nav btn-nav--tabs" data-action="period-prev" aria-label="Período anterior">
+              ‹
+            </button>
+            <button type="button" class="tab active" data-view="month" role="tab" aria-selected="true">
+              Mês
+            </button>
+            <button type="button" class="tab" data-view="week" role="tab" aria-selected="false">
+              Semana
+            </button>
+            <button type="button" class="tab" data-view="day" role="tab" aria-selected="false">
+              Dia
+            </button>
+            <button type="button" id="btn-next" class="btn-nav btn-nav--tabs" data-action="period-next" aria-label="Período seguinte">
+              ›
+            </button>
+          </nav>
+          <div class="titlebar-actions">
+            <button
+              type="button"
+              id="btn-send-back"
+              class="btn-icon"
+              title="Colocar atrás dos ícones do ambiente de trabalho (ícone pequeno para voltar)"
+            >
+              ⤓
+            </button>
+            <button type="button" id="btn-bring-front" class="btn-icon" title="Trazer esta janela à frente">
+              ⤒
+            </button>
+            <button type="button" id="btn-mode" class="btn-icon" title="Alternar widget / app">
+              ⛶
+            </button>
+            <button
+              type="button"
+              id="btn-settings"
+              class="btn-icon"
+              title="Definições"
+              aria-label="Definições"
+            >
+              ⚙
+            </button>
+          </div>
         </div>
       </header>
 
-      <section class="calendar-panel">
-        <div class="month-nav">
-          <button type="button" id="btn-prev" class="btn-nav" aria-label="Mês anterior">‹</button>
-          <h2 id="month-label" class="month-label"></h2>
-          <button type="button" id="btn-next" class="btn-nav" aria-label="Próximo mês">›</button>
+      <section class="agenda-panel" id="agenda-panel">
+        <div class="view-container" id="view-month">
+          <div class="weekday-row" id="weekday-row"></div>
+          <div class="grid month-grid" id="day-grid"></div>
         </div>
 
-        <div class="weekday-row" id="weekday-row"></div>
-        <div class="grid" id="day-grid"></div>
+        <div class="view-container hidden" id="view-week">
+          <div class="week-columns" id="week-columns"></div>
+        </div>
+
+        <div class="view-container hidden" id="view-day">
+          <div class="day-detail" id="day-detail"></div>
+        </div>
 
         <p class="hint" id="sync-hint">
-          Google Calendar: em breve (Fase 2). Eventos locais de demonstração apenas.
+          Dados de demonstração. Google Calendar em desenvolvimento (Fase 2).
         </p>
       </section>
 
       <section class="settings-panel hidden" id="settings-panel">
-        <h3 class="settings-title">Aparência</h3>
+        <h3 class="settings-title">Aparência e janela</h3>
         <label class="field">
           <span>Tema</span>
           <select id="select-theme">
@@ -47,15 +93,29 @@
           <span>Opacidade do widget</span>
           <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" />
         </label>
+
+        <h3 class="settings-title settings-title-spaced">Conta e sincronização</h3>
+        <p class="settings-info" id="calendar-state-line">A carregar estado…</p>
+        <p class="settings-info settings-info-muted hidden" id="calendar-client-id-hint"></p>
+        <div class="settings-actions" id="calendar-actions">
+          <button type="button" class="btn-secondary" id="btn-google-sign-in">Ligar conta Google</button>
+          <button type="button" class="btn-secondary" id="btn-google-sync">Sincronizar agora</button>
+          <button type="button" class="btn-secondary btn-secondary-danger" id="btn-google-disconnect">
+            Terminar sessão
+          </button>
+        </div>
+        <p class="settings-info settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
+
+        <h3 class="settings-title settings-title-spaced">Ficar atrás de outras janelas</h3>
+        <p class="settings-info">
+          Usa <strong>⤓</strong> na barra (ou o ícone na <strong>bandeja</strong>) para mandar a janela para
+          <strong>trás das outras apps</strong>. Para voltar: ícone na bandeja ou <strong>⤒</strong> (se a janela ainda aparecer, p.ex. Alt+Tab).
+        </p>
+
         <p class="settings-foot">
-          Posição e tamanho da janela são guardados automaticamente ao fechar.
+          Posição e tamanho da janela são guardados ao fechar.
         </p>
       </section>
-
-      <footer class="toolbar">
-        <button type="button" id="btn-cal" class="tool active">Calendário</button>
-        <button type="button" id="btn-settings" class="tool">Definições</button>
-      </footer>
     </div>
   </body>
 </html>

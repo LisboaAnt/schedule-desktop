@@ -33,6 +33,9 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 
 ## Fase 2 — Google Calendar
 
+- [x] Esboço **SQLite** (`agenda_cache.sqlite3`): tabelas `cached_events` + `sync_state` (ver `src-tauri/src/local_store.rs`).
+- [x] Tipo **CalendarEvent** unificado em Rust (`calendar_model.rs`) e comando **`get_calendar_state`** (UI ainda em demo).
+- [x] Documentação: [GOOGLE-CALENDAR-FASE2.md](./GOOGLE-CALENDAR-FASE2.md), [CICLOS-PROXIMOS.md](./CICLOS-PROXIMOS.md).
 - [ ] Projeto no **Google Cloud Console**: tipo de cliente OAuth adequado a app desktop, URIs de redirecionamento documentados.
 - [ ] Fluxo **OAuth2** (PKCE / localhost): login, troca de código, **refresh token** seguro.
 - [ ] Armazenar tokens com **Credential Manager** do Windows (ou abstração Tauri equivalente).
@@ -48,12 +51,13 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 
 ## Fase 3 — Polimento e leveza
 
+- [x] **Ícone na bandeja** (básico): menu / clique para trazer a janela à frente (completar: ocultar, sair, etc.).
 - [ ] Intervalo de **sync automático** configurável + botão “sincronizar agora”.
 - [ ] Sync ao **focar** a janela (opcional, com throttle).
 - [ ] **Lazy loading** de meses/dias na UI; evitar renderizar milhares de nós de uma vez.
 - [ ] Revisão de **dependências** (remover o que não for essencial).
 - [ ] **Iniciar com o Windows**: implementar e documentar (Startup ou `Run`).
-- [ ] **Ícone na bandeja** (system tray): mostrar/ocultar widget, sair de verdade.
+- [ ] **Ícone na bandeja**: mostrar/ocultar widget, sair de verdade (além do “trazer à frente”).
 - [ ] Comportamento opcional: **fechar = minimizar** para bandeja.
 - [ ] Opções avançadas de personalização: **opacidade**, densidade, fonte, cores por token de tema.
 - [ ] Medição informal de **RAM em idle** (notas no README ou doc de release).
@@ -62,7 +66,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 
 ## Fase 4 — Comunidade
 
-- [ ] **CONTRIBUTING.md**: como rodar, padrão de branches, PRs.
+- [x] **CONTRIBUTING.md** (base): como rodar, PRs, sem secrets — expandir com branches/templates depois.
 - [ ] **CODE_OF_CONDUCT.md** (opcional mas recomendado para OSS).
 - [ ] Templates de **issue** (bug, feature) e **pull request**.
 - [ ] **CHANGELOG.md** ou releases com notas por versão.

@@ -6,12 +6,13 @@ Este arquivo documenta o projeto para **desenvolvedores humanos** e para **assis
 
 ## O que é o projeto
 
-Calendário para **Windows 11** com:
+Agenda / calendário para **Windows 11** com:
 
-- **Modo widget** (prioridade): janela leve, posição/tamanho personalizáveis, pensado para uso contínuo na área de trabalho.
+- **Modo widget** (prioridade): janela leve, posição/tamanho personalizáveis; no **Windows** há modo **atrás dos ícones** (WorkerW) com pílula para voltar.
 - **Modo aplicativo**: mesma base, UI expandida.
-- **Sincronização bidirecional com Google Calendar**.
-- **Visual totalmente personalizável** (tema, cores, tipografia, opacidade, etc.).
+- **Vistas** mês, semana e dia; tarefas por dia (demo em `src/agenda.js` até haver Google Calendar).
+- **Sincronização bidirecional com Google Calendar** (planeada).
+- **Visual personalizável** (tema, opacidade; mais tokens depois).
 - Foco em **baixo uso de RAM, CPU e rede**; adequado a **iniciar com o Windows**.
 - **Open source** no GitHub.
 
@@ -23,6 +24,8 @@ Calendário para **Windows 11** com:
 |-----------|-----------|
 | [docs/PLANEJAMENTO.md](./docs/PLANEJAMENTO.md) | Visão, requisitos, fases, riscos, critérios de sucesso |
 | [docs/TAREFAS-POR-CICLO.md](./docs/TAREFAS-POR-CICLO.md) | Tarefas/checklist por fase (Fase 0–4 + backlog) |
+| [docs/CICLOS-PROXIMOS.md](./docs/CICLOS-PROXIMOS.md) | Próximos ciclos após UI (Fase 2 em diante) |
+| [docs/GOOGLE-CALENDAR-FASE2.md](./docs/GOOGLE-CALENDAR-FASE2.md) | OAuth + Calendar API (implementação) |
 | [docs/COMO-RODAR.md](./docs/COMO-RODAR.md) | Rodar no PC (Windows 11), toolchain nativa vs Docker |
 | [docs/ARQUITETURA-E-STACK.md](./docs/ARQUITETURA-E-STACK.md) | Stack recomendada (Tauri + WebView2), módulos, sync, otimizações, segurança |
 
@@ -55,11 +58,11 @@ Leia estes dois antes de implementar funcionalidades grandes.
 - **Tauri 2** + frontend **vanilla** em `src/` (`index.html`, `styles.css`, `main.js`).
 - **Plugin window-state**: posição e tamanho da janela persistidos.
 - **Comandos Rust** `get_app_config` / `save_app_config` (JSON em `app_config_dir`).
-- UI: calendário mensal, modo widget/app, tema claro/escuro/sistema, opacidade, definições.
+- UI: agenda (mês/semana/dia), tarefas demo, arrastar na barra superior (`-webkit-app-region: drag`), definições.
 - **LICENSE** (MIT), **README.md**, **CI** (`.github/workflows/ci.yml` — build Windows).
 - Ícones em `src-tauri/icons/` (gerados a partir de fonte removida do repo).
 
-Próximos passos grandes: **OAuth + Google Calendar API**, SQLite, bandeja, iniciar com Windows — ver [docs/TAREFAS-POR-CICLO.md](./docs/TAREFAS-POR-CICLO.md).
+Próximos passos grandes: **OAuth + Google Calendar API** (preencher SQLite, UI de eventos), **iniciar com Windows**, bandeja completa — ver [docs/CICLOS-PROXIMOS.md](./docs/CICLOS-PROXIMOS.md) e [docs/TAREFAS-POR-CICLO.md](./docs/TAREFAS-POR-CICLO.md).
 
 ---
 

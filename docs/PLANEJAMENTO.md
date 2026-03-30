@@ -100,5 +100,7 @@ Objetivo: ser **o mais leve possível** em RAM, CPU e tráfego de rede, adequado
 
 - [ARQUITETURA-E-STACK.md](./ARQUITETURA-E-STACK.md) — stack recomendada, módulos e otimizações técnicas.
 - [TAREFAS-POR-CICLO.md](./TAREFAS-POR-CICLO.md) — checklist detalhada por fase (ciclos).
+- [CICLOS-PROXIMOS.md](./CICLOS-PROXIMOS.md) — ordem sugerida após fechar a UI (Fase 2+).
+- [GOOGLE-CALENDAR-FASE2.md](./GOOGLE-CALENDAR-FASE2.md) — OAuth e API Calendar v3.
 - [COMO-RODAR.md](./COMO-RODAR.md) — como executar no Windows 11 e papel do Docker.
 - [../claude.md](../claude.md) — índice e orientação para desenvolvimento e para assistentes de IA.
