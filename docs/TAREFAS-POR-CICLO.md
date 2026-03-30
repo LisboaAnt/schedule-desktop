@@ -40,7 +40,8 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Fluxo **OAuth2** (PKCE / localhost): login, troca de código, **refresh token** seguro.
 - [x] Armazenar tokens com **Credential Manager** do Windows (ou abstração Tauri equivalente).
 - [x] Cliente Calendar API v3 no **Rust**: `events.list` por intervalo + **sync incremental** com `syncToken` (calendário `primary`).
-- [ ] **Criar / atualizar / apagar** evento e refletir no Google.
+- [x] **Criar** evento no calendário `primary` (`events.insert`) + entrada na cache local.
+- [ ] **Atualizar / apagar** evento e refletir no Google.
 - [x] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API) — leitura/listagem; escrita em falta.
 - [x] **SQLite**: cache de eventos + `sync_state` com `nextSyncToken` / incremental; `updatedMin` não usado.
 - [ ] **Fila offline**: mutações enfileiradas quando sem rede; envio com retry e tratamento de erro.

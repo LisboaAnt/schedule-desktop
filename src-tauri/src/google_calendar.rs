@@ -6,8 +6,10 @@
 //! OAuth na Google estiver como **aplicação Web**; o tipo **Desktop** funciona só com PKCE (sem secret).
 //! Redirect fixo: `http://127.0.0.1:17892/callback` — adiciona este URI nas credenciais OAuth (app desktop).
 
+use std::fs;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -17,7 +19,7 @@ use chrono::{Months, Utc};
 use keyring::Entry;
 use rand::Rng;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 use tauri::Manager;
@@ -27,9 +29,12 @@ use crate::local_store;
 
 const KEYRING_SERVICE: &str = "calendario-app";
 const KEYRING_USER_REFRESH: &str = "google_oauth_refresh_token";
+/// Ficheiro na pasta de dados local (ao lado do SQLite). O keyring no Windows em dev falha por vezes; o ficheiro garante persistência.
+const REFRESH_TOKEN_FILENAME: &str = "google_oauth_refresh_token";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
-const SCOPE: &str = "https://www.googleapis.com/auth/calendar.readonly";
+/// Leitura + criação/edição de eventos. Após mudar o escopo, volta a **Ligar conta Google**.
+const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 const PRIMARY: &str = "primary";
 /// Porta do servidor local de callback OAuth (deve coincidir com o URI na Google Cloud Console).
 const OAUTH_CALLBACK_PORT: u16 = 17_892;
@@ -129,23 +134,73 @@ fn keyring_entry() -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, KEYRING_USER_REFRESH).map_err(|e| e.to_string())
 }
 
-pub fn has_refresh_token() -> bool {
-    keyring_entry()
-        .ok()
-        .and_then(|e| e.get_password().ok())
-        .filter(|s| !s.is_empty())
-        .is_some()
+fn refresh_token_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("app_local_data_dir: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
+    Ok(dir.join(REFRESH_TOKEN_FILENAME))
 }
 
-fn store_refresh_token(token: &str) -> Result<(), String> {
-    let e = keyring_entry()?;
-    e.set_password(token).map_err(|e| e.to_string())
+fn read_refresh_token_file(app: &AppHandle) -> Option<String> {
+    refresh_token_file_path(app).ok().and_then(|p| {
+        fs::read_to_string(&p)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    })
 }
 
-pub fn delete_refresh_token() -> Result<(), String> {
-    let e = keyring_entry()?;
-    let _ = e.delete_credential();
+fn write_refresh_token_file(app: &AppHandle, token: &str) -> Result<(), String> {
+    let p = refresh_token_file_path(app)?;
+    fs::write(&p, token).map_err(|e| format!("Não foi possível guardar o token OAuth: {e}"))
+}
+
+fn remove_refresh_token_file(app: &AppHandle) {
+    if let Ok(p) = refresh_token_file_path(app) {
+        let _ = fs::remove_file(p);
+    }
+}
+
+pub fn has_refresh_token(app: &AppHandle) -> bool {
+    read_refresh_token_file(app).is_some()
+        || keyring_entry()
+            .ok()
+            .and_then(|e| e.get_password().ok())
+            .filter(|s| !s.is_empty())
+            .is_some()
+}
+
+fn store_refresh_token(app: &AppHandle, token: &str) -> Result<(), String> {
+    write_refresh_token_file(app, token)?;
+    if let Ok(e) = keyring_entry() {
+        let _ = e.set_password(token);
+    }
     Ok(())
+}
+
+pub fn delete_refresh_token(app: &AppHandle) -> Result<(), String> {
+    remove_refresh_token_file(app);
+    if let Ok(e) = keyring_entry() {
+        let _ = e.delete_credential();
+    }
+    Ok(())
+}
+
+fn get_refresh_token(app: &AppHandle) -> Result<String, String> {
+    if let Some(t) = read_refresh_token_file(app) {
+        return Ok(t);
+    }
+    let e = keyring_entry()?;
+    let t = e
+        .get_password()
+        .map_err(|e| format!("Token OAuth em falta: {e}. Volta a ligar a conta Google."))?;
+    if t.trim().is_empty() {
+        return Err("Token OAuth em falta. Volta a ligar a conta Google.".into());
+    }
+    let _ = write_refresh_token_file(app, t.trim());
+    Ok(t.trim().to_string())
 }
 
 fn pkce_verifier() -> String {
@@ -343,14 +398,8 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
         .refresh_token
         .ok_or_else(|| "OAuth: Google não devolveu refresh_token. Tenta de novo com prompt=consent ou revoga o acesso à app nas definições Google.".to_string())?;
 
-    store_refresh_token(&refresh)?;
-    let _ = app;
+    store_refresh_token(app, &refresh)?;
     Ok(())
-}
-
-fn get_refresh_token() -> Result<String, String> {
-    let e = keyring_entry()?;
-    e.get_password().map_err(|e| e.to_string())
 }
 
 pub async fn refresh_access_token(app: &AppHandle, refresh: &str) -> Result<String, String> {
@@ -620,7 +669,7 @@ async fn sync_primary_full_window(
 
 /// Sincroniza o calendário principal: incremental com `syncToken` quando existir; senão janela ~9 meses + token inicial.
 pub async fn sync_primary_to_cache(app: &AppHandle) -> Result<usize, String> {
-    let refresh = get_refresh_token()?;
+    let refresh = get_refresh_token(app)?;
     let access = refresh_access_token(app, &refresh).await?;
 
     let http = reqwest::Client::builder()
@@ -640,8 +689,67 @@ pub async fn sync_primary_to_cache(app: &AppHandle) -> Result<usize, String> {
     sync_primary_full_window(app, &http, &access).await
 }
 
+/// Cria um evento no calendário `primary`. `start_iso` / `end_iso`: RFC3339 com hora, ou só `YYYY-MM-DD` se `all_day` (fim **exclusivo** no último dia).
+pub async fn create_primary_calendar_event(
+    app: &AppHandle,
+    summary: String,
+    all_day: bool,
+    start_iso: String,
+    end_iso: String,
+) -> Result<CalendarEvent, String> {
+    let summary = summary.trim().to_string();
+    if summary.is_empty() {
+        return Err("Indica um título para o evento.".into());
+    }
+    let refresh = get_refresh_token(app)?;
+    let access = refresh_access_token(app, &refresh).await?;
+
+    let body = if all_day {
+        json!({
+            "summary": summary,
+            "start": { "date": start_iso.trim() },
+            "end": { "date": end_iso.trim() },
+        })
+    } else {
+        json!({
+            "summary": summary,
+            "start": { "dateTime": start_iso.trim() },
+            "end": { "dateTime": end_iso.trim() },
+        })
+    };
+
+    let url = format!(
+        "https://www.googleapis.com/calendar/v3/calendars/{}/events",
+        PRIMARY
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let res = client
+        .post(&url)
+        .query(&[("sendUpdates", "all")])
+        .bearer_auth(access)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Calendar API: {e}"))?;
+
+    if !res.status().is_success() {
+        let t = res.text().await.unwrap_or_default();
+        return Err(format!("Não foi possível criar o evento: {t}"));
+    }
+
+    let created: Value = res.json().await.map_err(|e| e.to_string())?;
+    let ev = event_from_api_item(&created)
+        .ok_or_else(|| "Resposta inválida ao criar evento.".to_string())?;
+    local_store::upsert_cached_event(app, &ev)?;
+    Ok(ev)
+}
+
 pub fn sign_out_and_clear_cache(app: &AppHandle) -> Result<(), String> {
-    delete_refresh_token()?;
+    delete_refresh_token(app)?;
     local_store::clear_calendar_events(app, PRIMARY)?;
     Ok(())
 }

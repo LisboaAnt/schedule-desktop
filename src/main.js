@@ -459,9 +459,33 @@ function eventsToByIso(events) {
   return map;
 }
 
+/** @param {Record<string, unknown>} raw */
+function normalizeCalendarState(raw) {
+  const clientIdConfigured = Boolean(
+    raw.clientIdConfigured ?? raw.client_id_configured,
+  );
+  const connected = Boolean(raw.connected);
+  const dbReady = Boolean(raw.dbReady ?? raw.db_ready);
+  const source = typeof raw.source === "string" ? raw.source : "demo";
+  return { source, connected, dbReady, clientIdConfigured };
+}
+
+/** Depois de OAuth com sucesso: o backend já tem refresh token — garante botões ativos mesmo se o estado IPC atrasar. */
+function applyGoogleButtonsSignedIn() {
+  const row = document.getElementById("calendar-actions");
+  const signIn = document.getElementById("btn-google-sign-in");
+  const sync = document.getElementById("btn-google-sync");
+  const disc = document.getElementById("btn-google-disconnect");
+  if (!signIn || !sync || !disc) return;
+  row?.classList.add("has-google-session");
+  signIn.disabled = true;
+  sync.disabled = false;
+  disc.disabled = false;
+}
+
 async function applyGoogleCalendarToGrid() {
   try {
-    const s = await invoke("get_calendar_state");
+    const s = normalizeCalendarState(await invoke("get_calendar_state"));
     setUseGoogleCalendar(s.connected);
     updateSyncHint(s);
     if (s.connected) {
@@ -503,13 +527,73 @@ function updateGoogleButtons(state) {
   signIn.disabled = !cfg || state.connected;
   sync.disabled = !cfg || !state.connected;
   disc.disabled = !cfg || !state.connected;
+
+  const row = document.getElementById("calendar-actions");
+  if (row) {
+    if (cfg && state.connected) row.classList.add("has-google-session");
+    else row.classList.remove("has-google-session");
+  }
+
+  const createBlock = document.getElementById("create-google-event-block");
+  if (createBlock) {
+    const show = cfg && state.connected;
+    createBlock.classList.toggle("hidden", !show);
+    createBlock.querySelectorAll("input, button").forEach((el) => {
+      el.disabled = !show;
+    });
+  }
+}
+
+function primeNewGoogleEventForm() {
+  const d = document.getElementById("new-event-date");
+  if (d) {
+    d.value = padIso(cursor.getFullYear(), cursor.getMonth(), cursor.getDate());
+  }
+  const sum = document.getElementById("new-event-summary");
+  if (sum) sum.value = "";
+}
+
+/** @returns {{ summary: string, allDay: boolean, startIso: string, endIso: string }} */
+function buildCreateGoogleEventPayload() {
+  const summary = document.getElementById("new-event-summary")?.value?.trim() || "";
+  const date = document.getElementById("new-event-date")?.value;
+  const allDay = Boolean(document.getElementById("new-event-allday")?.checked);
+  const tStart = document.getElementById("new-event-time-start")?.value || "09:00";
+  const tEnd = document.getElementById("new-event-time-end")?.value || "10:00";
+  if (!summary) {
+    throw new Error("Escreve um título para o evento.");
+  }
+  if (!date) {
+    throw new Error("Escolhe uma data.");
+  }
+  if (allDay) {
+    const d = new Date(`${date}T12:00:00`);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    const endStr = padIso(next.getFullYear(), next.getMonth(), next.getDate());
+    return { summary, allDay: true, startIso: date, endIso: endStr };
+  }
+  const start = new Date(`${date}T${tStart}:00`);
+  let end = new Date(`${date}T${tEnd}:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error("Data ou hora inválida.");
+  }
+  if (end <= start) {
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+  }
+  return {
+    summary,
+    allDay: false,
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
 }
 
 async function refreshCalendarStateLine() {
   const el = document.getElementById("calendar-state-line");
   if (!el) return;
   try {
-    const s = await invoke("get_calendar_state");
+    const s = normalizeCalendarState(await invoke("get_calendar_state"));
     updateSyncHint(s);
     updateGoogleButtons(s);
     const db = s.dbReady ? "Base local (cache) pronta." : "Base local indisponível.";
@@ -533,6 +617,7 @@ function showPanel(which) {
     set.classList.remove("hidden");
     syncSettingsToggleButton(true);
     void refreshCalendarStateLine();
+    primeNewGoogleEventForm();
   } else {
     agenda.classList.remove("hidden");
     set.classList.add("hidden");
@@ -613,8 +698,16 @@ window.addEventListener("DOMContentLoaded", () => {
     setCalendarOAuthMessage("");
     try {
       await invoke("google_calendar_sign_in");
-      setCalendarOAuthMessage("Sessão iniciada. Usa «Sincronizar agora» para trazer eventos.");
+      setCalendarOAuthMessage(
+        "Sessão iniciada. Usa o botão «Sincronizar agora» logo abaixo para trazer os eventos.",
+      );
       await refreshCalendarStateLine();
+      applyGoogleButtonsSignedIn();
+      requestAnimationFrame(() => {
+        document
+          .getElementById("btn-google-sync")
+          ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
       await applyGoogleCalendarToGrid();
     } catch (e) {
       setCalendarOAuthMessage(e?.message || String(e));
@@ -637,6 +730,32 @@ window.addEventListener("DOMContentLoaded", () => {
     try {
       await invoke("google_calendar_disconnect");
       await refreshCalendarStateLine();
+      await applyGoogleCalendarToGrid();
+    } catch (e) {
+      setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("new-event-allday")?.addEventListener("change", (e) => {
+    const row = document.getElementById("new-event-time-row");
+    if (row) row.style.display = e.target.checked ? "none" : "flex";
+  });
+
+  document.getElementById("btn-new-google-event")?.addEventListener("click", async () => {
+    setCalendarOAuthMessage("");
+    try {
+      const p = buildCreateGoogleEventPayload();
+      await invoke("google_calendar_create_event", {
+        payload: {
+          summary: p.summary,
+          allDay: p.allDay,
+          startIso: p.startIso,
+          endIso: p.endIso,
+        },
+      });
+      setCalendarOAuthMessage("Evento criado no Google Calendar.");
+      const sum = document.getElementById("new-event-summary");
+      if (sum) sum.value = "";
       await applyGoogleCalendarToGrid();
     } catch (e) {
       setCalendarOAuthMessage(e?.message || String(e));

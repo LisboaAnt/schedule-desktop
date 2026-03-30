@@ -1,5 +1,4 @@
-//! Modelo unificado de evento (UI ↔ Rust ↔ Google Calendar API v3 na Fase 2).
-//! Por agora só tipos; a UI continua a usar dados de demonstração em `agenda.js`.
+//! Modelo unificado de evento (UI ↔ Rust ↔ Google Calendar API v3).
 
 use serde::{Deserialize, Serialize};
 

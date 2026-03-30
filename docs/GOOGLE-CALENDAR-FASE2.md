@@ -2,13 +2,15 @@
 
 Não coloques **client secret** nem refresh tokens no repositório. Usa variáveis de ambiente ou ficheiros locais ignorados pelo `.gitignore`.
 
+O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data_dir` (nome `google_oauth_refresh_token`, ao lado do SQLite), com espelho opcional no Credential Manager do Windows. Isto evita falhas em que o keyring em modo dev não persistia a leitura.
+
 ## Google Cloud Console
 
 1. Cria um projeto (ou usa um existente).
 2. Ativa a **Google Calendar API**.
 3. **Credenciais** → criar ID de cliente **OAuth** → tipo **Aplicativo para computador** (ou “Desktop”) conforme a consola atual.
 4. **URIs de redirecionamento** autorizados: `http://127.0.0.1:17892/callback` (porta fixa definida em `src-tauri/src/google_calendar.rs`).
-5. Escopos mínimos sugeridos: `https://www.googleapis.com/auth/calendar` (ou escopos mais restritos se a API permitir para o teu caso).
+5. Escopos na app: `https://www.googleapis.com/auth/calendar.events` (ler e criar/editar eventos). Se ligaste a conta com um escopo antigo (`…readonly`), volta a **Ligar conta Google** para consentir o novo.
 
 ## Fluxo recomendado (desktop)
 

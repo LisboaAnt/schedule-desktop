@@ -97,14 +97,44 @@
         <h3 class="settings-title settings-title-spaced">Conta e sincronização</h3>
         <p class="settings-info" id="calendar-state-line">A carregar estado…</p>
         <p class="settings-info settings-info-muted hidden" id="calendar-client-id-hint"></p>
+        <p class="settings-info settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
         <div class="settings-actions" id="calendar-actions">
           <button type="button" class="btn-secondary" id="btn-google-sign-in">Ligar conta Google</button>
-          <button type="button" class="btn-secondary" id="btn-google-sync">Sincronizar agora</button>
+          <button type="button" class="btn-secondary btn-sync-primary" id="btn-google-sync">Sincronizar agora</button>
           <button type="button" class="btn-secondary btn-secondary-danger" id="btn-google-disconnect">
             Terminar sessão
           </button>
         </div>
-        <p class="settings-info settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
+
+        <div class="create-google-event-block hidden" id="create-google-event-block">
+          <h3 class="settings-title settings-title-spaced">Criar evento (Google)</h3>
+          <p class="settings-info settings-info-compact">
+            O evento é criado no teu calendário principal e aparece na grelha após guardar.
+          </p>
+          <label class="field">
+            <span>Título</span>
+            <input type="text" id="new-event-summary" maxlength="500" placeholder="Reunião, lembrete…" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Data</span>
+            <input type="date" id="new-event-date" />
+          </label>
+          <label class="field field-checkbox">
+            <input type="checkbox" id="new-event-allday" />
+            <span>Dia inteiro</span>
+          </label>
+          <div class="field-row" id="new-event-time-row">
+            <label class="field field-inline">
+              <span>Início</span>
+              <input type="time" id="new-event-time-start" value="09:00" />
+            </label>
+            <label class="field field-inline">
+              <span>Fim</span>
+              <input type="time" id="new-event-time-end" value="10:00" />
+            </label>
+          </div>
+          <button type="button" class="btn-secondary btn-sync-primary" id="btn-new-google-event">Criar no Google Calendar</button>
+        </div>
 
         <h3 class="settings-title settings-title-spaced">Ficar atrás de outras janelas</h3>
         <p class="settings-info">

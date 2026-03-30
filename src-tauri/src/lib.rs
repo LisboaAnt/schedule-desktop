@@ -255,7 +255,7 @@ pub struct CalendarState {
 
 #[tauri::command]
 fn get_calendar_state(app: tauri::AppHandle) -> CalendarState {
-    let connected = google_calendar::has_refresh_token();
+    let connected = google_calendar::has_refresh_token(&app);
     CalendarState {
         source: if connected {
             "google".to_string()
@@ -295,6 +295,30 @@ fn get_cached_calendar_events(
     app: tauri::AppHandle,
 ) -> Result<Vec<calendar_model::CalendarEvent>, String> {
     local_store::list_cached_events(&app)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateGoogleEventPayload {
+    pub summary: String,
+    pub all_day: bool,
+    pub start_iso: String,
+    pub end_iso: String,
+}
+
+#[tauri::command]
+async fn google_calendar_create_event(
+    app: tauri::AppHandle,
+    payload: CreateGoogleEventPayload,
+) -> Result<calendar_model::CalendarEvent, String> {
+    google_calendar::create_primary_calendar_event(
+        &app,
+        payload.summary,
+        payload.all_day,
+        payload.start_iso,
+        payload.end_iso,
+    )
+    .await
 }
 
 /// No Windows: ancora atrás dos ícones do ambiente de trabalho, esconde a barra (CSS) e abre a pílula “voltar”.
@@ -413,6 +437,7 @@ pub fn run() {
             google_calendar_sync,
             google_calendar_disconnect,
             get_cached_calendar_events,
+            google_calendar_create_event,
             send_window_to_back,
             bring_window_to_front,
             reposition_restore_pill,

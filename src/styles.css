@@ -634,11 +634,79 @@ input,
   display: none;
 }
 
+.settings-info-compact {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+.create-google-event-block.hidden {
+  display: none;
+}
+
+.create-google-event-block .field-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-google-event-block .field-checkbox input {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.field-inline {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.create-google-event-block input[type="text"],
+.create-google-event-block input[type="date"],
+.create-google-event-block input[type="time"] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.create-google-event-block input:disabled {
+  opacity: 0.5;
+}
+
+#create-google-event-block .btn-secondary {
+  margin-top: 4px;
+}
+
 .settings-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  flex-wrap: nowrap;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-actions .btn-secondary {
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* Destaque do «Sincronizar» quando há sessão (evita confundir com botões desativados) */
+.settings-actions.has-google-session .btn-sync-primary:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
 }
 
 .btn-secondary {
@@ -669,10 +737,11 @@ input,
 
 .settings-oauth-msg {
   min-height: 1.2em;
-  margin-bottom: 8px;
-  padding: 6px 10px;
-  background: transparent;
-  border: none;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
   color: var(--accent);
 }
 
