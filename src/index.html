@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Calendário</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body class="theme-dark view-widget">
+    <div id="app" class="shell">
+      <header class="titlebar" data-tauri-drag-region>
+        <span class="title" data-tauri-drag-region>Calendário</span>
+        <div class="titlebar-actions">
+          <button type="button" id="btn-mode" class="btn-icon" title="Alternar widget / app">
+            ⛶
+          </button>
+        </div>
+      </header>
+
+      <section class="calendar-panel">
+        <div class="month-nav">
+          <button type="button" id="btn-prev" class="btn-nav" aria-label="Mês anterior">‹</button>
+          <h2 id="month-label" class="month-label"></h2>
+          <button type="button" id="btn-next" class="btn-nav" aria-label="Próximo mês">›</button>
+        </div>
+
+        <div class="weekday-row" id="weekday-row"></div>
+        <div class="grid" id="day-grid"></div>
+
+        <p class="hint" id="sync-hint">
+          Google Calendar: em breve (Fase 2). Eventos locais de demonstração apenas.
+        </p>
+      </section>
+
+      <section class="settings-panel hidden" id="settings-panel">
+        <h3 class="settings-title">Aparência</h3>
+        <label class="field">
+          <span>Tema</span>
+          <select id="select-theme">
+            <option value="dark">Escuro</option>
+            <option value="light">Claro</option>
+            <option value="system">Sistema</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Opacidade do widget</span>
+          <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" />
+        </label>
+        <p class="settings-foot">
+          Posição e tamanho da janela são guardados automaticamente ao fechar.
+        </p>
+      </section>
+
+      <footer class="toolbar">
+        <button type="button" id="btn-cal" class="tool active">Calendário</button>
+        <button type="button" id="btn-settings" class="tool">Definições</button>
+      </footer>
+    </div>
+  </body>
+</html>

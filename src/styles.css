@@ -1,0 +1,288 @@
+:root {
+  --bg: #12141a;
+  --surface: #1a1d26;
+  --text: #e8eaef;
+  --muted: #8b919d;
+  --accent: #5b8def;
+  --accent-soft: rgba(91, 141, 239, 0.2);
+  --border: #2a2f3a;
+  --today: #3d4f7a;
+  --radius: 10px;
+  --font: "Segoe UI", system-ui, sans-serif;
+}
+
+body.theme-light {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --text: #1a1d26;
+  --muted: #5c6370;
+  --accent: #2f6fed;
+  --accent-soft: rgba(47, 111, 237, 0.12);
+  --border: #d8dde6;
+  --today: #cfe0ff;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+body {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.titlebar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-icon {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.btn-icon:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.calendar-panel {
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calendar-panel.hidden {
+  display: none;
+}
+
+.view-app .calendar-panel {
+  padding-bottom: 12px;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.month-label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.btn-nav {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.btn-nav:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+  align-content: start;
+}
+
+.view-widget .grid {
+  min-height: 168px;
+}
+
+.view-app .grid {
+  min-height: 260px;
+}
+
+.cell {
+  aspect-ratio: 1;
+  max-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+
+.cell.in-month {
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cell.in-month:hover {
+  background: var(--accent-soft);
+}
+
+.cell.today {
+  background: var(--today);
+  font-weight: 700;
+  border-color: var(--accent);
+}
+
+.cell.other-month {
+  opacity: 0.35;
+}
+
+.hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--muted);
+  text-align: center;
+}
+
+.view-app .hint {
+  font-size: 11px;
+}
+
+.settings-panel {
+  flex: 1;
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+.settings-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field select,
+.field input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.settings-foot {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.toolbar {
+  display: flex;
+  border-top: 1px solid var(--border);
+  padding: 6px;
+  gap: 6px;
+  background: var(--surface);
+}
+
+.tool {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tool:hover {
+  color: var(--text);
+}
+
+.tool.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.view-app .shell {
+  min-width: 360px;
+}
+
+.view-widget .shell {
+  max-width: 100%;
+}
