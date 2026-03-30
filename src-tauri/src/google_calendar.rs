@@ -15,16 +15,19 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
-use chrono::{Months, Utc};
+use chrono::{DateTime, Datelike, Months, NaiveDate, Utc, Weekday};
 use keyring::Entry;
 use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use urlencoding::encode as urlenc;
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 use tauri::Manager;
 
-use crate::calendar_model::CalendarEvent;
+use crate::calendar_model::{
+    CalendarAttendee, CalendarEvent, CalendarEventForm, EventWriteExtensions,
+};
 use crate::local_store;
 
 const KEYRING_SERVICE: &str = "calendario-app";
@@ -449,6 +452,31 @@ pub async fn refresh_access_token(app: &AppHandle, refresh: &str) -> Result<Stri
     Ok(tj.access_token)
 }
 
+/// Anexa instruções quando a API devolve 403 por escopo (token antigo só de leitura, etc.).
+fn calendar_api_scope_hint(body: &str) -> Option<&'static str> {
+    let b = body.to_ascii_lowercase();
+    if b.contains("insufficient authentication scopes")
+        || b.contains("access_token_scope_insufficient")
+        || b.contains("insufficientpermissions")
+        || b.contains("insufficient permission")
+    {
+        Some(
+            "\n\n→ O login Google não inclui permissão para criar ou alterar eventos (p.ex. sessão antiga só de leitura). \
+             Em Definições da app: «Desligar Google» e volta a «Ligar conta Google» para aceitar o escopo completo do calendário.",
+        )
+    } else {
+        None
+    }
+}
+
+fn format_calendar_write_error(context: &str, body: &str) -> String {
+    let mut s = format!("{context}: {body}");
+    if let Some(h) = calendar_api_scope_hint(body) {
+        s.push_str(h);
+    }
+    s
+}
+
 fn parse_event_times(item: &Value) -> (Option<String>, Option<String>) {
     let start = item.get("start");
     let end = item.get("end");
@@ -467,6 +495,159 @@ fn parse_event_times(item: &Value) -> (Option<String>, Option<String>) {
     (s, e)
 }
 
+fn meet_request_id() -> String {
+    format!("meet-{:x}", rand::random::<u128>())
+}
+
+fn naive_date_from_start(start_iso: &str, all_day: bool) -> Option<NaiveDate> {
+    let s = start_iso.trim();
+    if all_day {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+    } else {
+        DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|dt| dt.date_naive())
+            .or_else(|| {
+                if s.len() >= 10 {
+                    NaiveDate::parse_from_str(&s[..10], "%Y-%m-%d").ok()
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+fn weekday_to_byday(w: Weekday) -> &'static str {
+    match w {
+        Weekday::Mon => "MO",
+        Weekday::Tue => "TU",
+        Weekday::Wed => "WE",
+        Weekday::Thu => "TH",
+        Weekday::Fri => "FR",
+        Weekday::Sat => "SA",
+        Weekday::Sun => "SU",
+    }
+}
+
+fn recurrence_rules_from_ext(
+    ext: &EventWriteExtensions,
+    start_iso: &str,
+    all_day: bool,
+    is_patch: bool,
+) -> Option<Value> {
+    let rec = ext.recurrence.trim();
+    let rec = if rec.is_empty() { "none" } else { rec };
+    if rec == "none" {
+        return if is_patch {
+            Some(json!([]))
+        } else {
+            None
+        };
+    }
+    let date = naive_date_from_start(start_iso, all_day)?;
+    let rule = match rec {
+        "daily" => "RRULE:FREQ=DAILY".to_string(),
+        "weekly" => format!(
+            "RRULE:FREQ=WEEKLY;BYDAY={}",
+            weekday_to_byday(date.weekday())
+        ),
+        "monthly" => format!("RRULE:FREQ=MONTHLY;BYMONTHDAY={}", date.day()),
+        "yearly" => format!(
+            "RRULE:FREQ=YEARLY;BYMONTH={};BYMONTHDAY={}",
+            date.month(),
+            date.day()
+        ),
+        _ => return if is_patch { Some(json!([])) } else { None },
+    };
+    Some(json!([rule]))
+}
+
+fn sanitize_attendees(emails: &[String]) -> Vec<Value> {
+    emails
+        .iter()
+        .map(|e| e.trim().to_lowercase())
+        .filter(|e| e.contains('@') && e.contains('.') && e.len() > 5)
+        .map(|email| json!({ "email": email }))
+        .collect()
+}
+
+fn parse_form_from_item(item: &Value) -> Option<CalendarEventForm> {
+    let mut f = CalendarEventForm::default();
+    if let Some(h) = item.get("hangoutLink").and_then(|v| v.as_str()) {
+        if !h.is_empty() {
+            f.hangout_link = Some(h.to_string());
+        }
+    }
+    if let Some(arr) = item.get("recurrence").and_then(|v| v.as_array()) {
+        let rules: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect();
+        if !rules.is_empty() {
+            f.recurrence = Some(rules);
+        }
+    }
+    if let Some(rem) = item.get("reminders") {
+        f.reminders_use_default = rem.get("useDefault").and_then(|v| v.as_bool());
+        if let Some(over) = rem.get("overrides").and_then(|v| v.as_array()) {
+            for o in over {
+                if o.get("method").and_then(|v| v.as_str()) == Some("popup") {
+                    if let Some(m) = o.get("minutes").and_then(|v| v.as_i64()) {
+                        f.reminder_popup_minutes = Some(m as i32);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if let Some(arr) = item.get("attendees").and_then(|v| v.as_array()) {
+        let mut atts = Vec::new();
+        for a in arr {
+            let email = a.get("email").and_then(|v| v.as_str()).unwrap_or("").trim();
+            if email.is_empty() {
+                continue;
+            }
+            atts.push(CalendarAttendee {
+                email: email.to_string(),
+                display_name: a
+                    .get("displayName")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            });
+        }
+        if !atts.is_empty() {
+            f.attendees = Some(atts);
+        }
+    }
+    f.transparency = item
+        .get("transparency")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    f.visibility = item
+        .get("visibility")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    f.color_id = item
+        .get("colorId")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    f.guests_can_modify = item
+        .get("guestsCanModify")
+        .and_then(|v| v.as_bool());
+    f.guests_can_invite_others = item
+        .get("guestsCanInviteOthers")
+        .and_then(|v| v.as_bool());
+    f.guests_can_see_other_guests = item
+        .get("guestsCanSeeOtherGuests")
+        .and_then(|v| v.as_bool());
+
+    if f == CalendarEventForm::default() {
+        None
+    } else {
+        Some(f)
+    }
+}
+
 fn event_from_api_item(item: &Value) -> Option<CalendarEvent> {
     let id = item.get("id")?.as_str()?.to_string();
     if id.is_empty() {
@@ -478,13 +659,144 @@ fn event_from_api_item(item: &Value) -> Option<CalendarEvent> {
         .unwrap_or("(sem título)")
         .to_string();
     let (start_at, end_at) = parse_event_times(item);
+    let description = item
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    let location = item
+        .get("location")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    let form = parse_form_from_item(item);
     Some(CalendarEvent {
         id,
         calendar_id: PRIMARY.to_string(),
         summary,
         start_at,
         end_at,
+        description,
+        location,
+        form,
     })
+}
+
+/// Corpo JSON para `events.insert` / `events.patch`.
+fn build_event_value(
+    summary: &str,
+    all_day: bool,
+    start_iso: &str,
+    end_iso: &str,
+    description: Option<&str>,
+    location: Option<&str>,
+    ext: &EventWriteExtensions,
+    is_patch: bool,
+) -> Value {
+    let mut v = if all_day {
+        json!({
+            "summary": summary,
+            "start": { "date": start_iso.trim() },
+            "end": { "date": end_iso.trim() },
+        })
+    } else {
+        json!({
+            "summary": summary,
+            "start": { "dateTime": start_iso.trim() },
+            "end": { "dateTime": end_iso.trim() },
+        })
+    };
+    let obj = v.as_object_mut().expect("object");
+    if let Some(d) = description {
+        let t = d.trim();
+        if !t.is_empty() {
+            obj.insert("description".to_string(), json!(t));
+        } else if is_patch {
+            obj.insert("description".to_string(), json!(null));
+        }
+    }
+    if let Some(l) = location {
+        let t = l.trim();
+        if !t.is_empty() {
+            obj.insert("location".to_string(), json!(t));
+        } else if is_patch {
+            obj.insert("location".to_string(), json!(null));
+        }
+    }
+
+    if let Some(cid) = ext.color_id.as_ref() {
+        let t = cid.trim();
+        if !t.is_empty() {
+            obj.insert("colorId".to_string(), json!(t));
+        } else if is_patch {
+            obj.insert("colorId".to_string(), json!(null));
+        }
+    }
+
+    let tr = ext.transparency.as_str();
+    if tr == "transparent" || tr == "opaque" {
+        obj.insert("transparency".to_string(), json!(tr));
+    }
+    let vis = ext.visibility.as_str();
+    if matches!(vis, "default" | "public" | "private" | "confidential") {
+        obj.insert("visibility".to_string(), json!(vis));
+    }
+
+    obj.insert(
+        "guestsCanModify".to_string(),
+        json!(ext.guests_can_modify),
+    );
+    obj.insert(
+        "guestsCanInviteOthers".to_string(),
+        json!(ext.guests_can_invite_others),
+    );
+    obj.insert(
+        "guestsCanSeeOtherGuests".to_string(),
+        json!(ext.guests_can_see_other_guests),
+    );
+
+    let attendees = sanitize_attendees(&ext.attendees);
+    if is_patch {
+        obj.insert("attendees".to_string(), Value::Array(attendees));
+    } else if !attendees.is_empty() {
+        obj.insert("attendees".to_string(), Value::Array(attendees));
+    }
+
+    // Com `useDefault: true` é obrigatório não deixar `overrides` do evento anterior (PATCH faz merge).
+    // Caso contrário a API devolve 400: cannotUseDefaultRemindersAndSpecifyOverride.
+    if ext.use_default_reminders {
+        obj.insert(
+            "reminders".to_string(),
+            json!({ "useDefault": true, "overrides": [] }),
+        );
+    } else {
+        let mins = ext.reminder_minutes.unwrap_or(30).min(40320) as i64;
+        obj.insert(
+            "reminders".to_string(),
+            json!({
+                "useDefault": false,
+                "overrides": [{ "method": "popup", "minutes": mins }]
+            }),
+        );
+    }
+
+    if let Some(rec) = recurrence_rules_from_ext(ext, start_iso, all_day, is_patch) {
+        obj.insert("recurrence".to_string(), rec);
+    }
+
+    if ext.request_google_meet {
+        obj.insert(
+            "conferenceData".to_string(),
+            json!({
+                "createRequest": {
+                    "requestId": meet_request_id(),
+                    "conferenceSolutionKey": { "type": "hangoutsMeet" }
+                }
+            }),
+        );
+    }
+
+    v
 }
 
 fn now_ms() -> i64 {
@@ -696,6 +1008,9 @@ pub async fn create_primary_calendar_event(
     all_day: bool,
     start_iso: String,
     end_iso: String,
+    description: Option<String>,
+    location: Option<String>,
+    extensions: EventWriteExtensions,
 ) -> Result<CalendarEvent, String> {
     let summary = summary.trim().to_string();
     if summary.is_empty() {
@@ -704,19 +1019,16 @@ pub async fn create_primary_calendar_event(
     let refresh = get_refresh_token(app)?;
     let access = refresh_access_token(app, &refresh).await?;
 
-    let body = if all_day {
-        json!({
-            "summary": summary,
-            "start": { "date": start_iso.trim() },
-            "end": { "date": end_iso.trim() },
-        })
-    } else {
-        json!({
-            "summary": summary,
-            "start": { "dateTime": start_iso.trim() },
-            "end": { "dateTime": end_iso.trim() },
-        })
-    };
+    let body = build_event_value(
+        &summary,
+        all_day,
+        &start_iso,
+        &end_iso,
+        description.as_deref(),
+        location.as_deref(),
+        &extensions,
+        false,
+    );
 
     let url = format!(
         "https://www.googleapis.com/calendar/v3/calendars/{}/events",
@@ -727,23 +1039,130 @@ pub async fn create_primary_calendar_event(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let res = client
+    let mut req = client
         .post(&url)
         .query(&[("sendUpdates", "all")])
         .bearer_auth(access)
-        .json(&body)
+        .json(&body);
+    if extensions.request_google_meet {
+        req = req.query(&[("conferenceDataVersion", "1")]);
+    }
+    let res = req
         .send()
         .await
         .map_err(|e| format!("Calendar API: {e}"))?;
 
     if !res.status().is_success() {
         let t = res.text().await.unwrap_or_default();
-        return Err(format!("Não foi possível criar o evento: {t}"));
+        return Err(format_calendar_write_error("Não foi possível criar o evento", &t));
     }
 
     let created: Value = res.json().await.map_err(|e| e.to_string())?;
     let ev = event_from_api_item(&created)
         .ok_or_else(|| "Resposta inválida ao criar evento.".to_string())?;
+    local_store::upsert_cached_event(app, &ev)?;
+    Ok(ev)
+}
+
+fn calendar_event_resource_url(calendar_id: &str, event_id: &str) -> String {
+    format!(
+        "https://www.googleapis.com/calendar/v3/calendars/{}/events/{}",
+        urlenc(calendar_id),
+        urlenc(event_id)
+    )
+}
+
+pub async fn delete_calendar_event(
+    app: &AppHandle,
+    calendar_id: &str,
+    event_id: &str,
+) -> Result<(), String> {
+    if event_id.trim().is_empty() {
+        return Err("ID do evento em falta.".into());
+    }
+    let refresh = get_refresh_token(app)?;
+    let access = refresh_access_token(app, &refresh).await?;
+    let url = calendar_event_resource_url(calendar_id, event_id);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .delete(&url)
+        .query(&[("sendUpdates", "all")])
+        .bearer_auth(access)
+        .send()
+        .await
+        .map_err(|e| format!("Calendar API: {e}"))?;
+    if !res.status().is_success() {
+        let t = res.text().await.unwrap_or_default();
+        return Err(format_calendar_write_error("Não foi possível apagar o evento", &t));
+    }
+    // 204 No Content — sem JSON
+    local_store::delete_cached_event(app, calendar_id, event_id)?;
+    Ok(())
+}
+
+pub async fn update_calendar_event(
+    app: &AppHandle,
+    calendar_id: &str,
+    event_id: &str,
+    summary: String,
+    all_day: bool,
+    start_iso: String,
+    end_iso: String,
+    description: Option<String>,
+    location: Option<String>,
+    extensions: EventWriteExtensions,
+) -> Result<CalendarEvent, String> {
+    let summary = summary.trim().to_string();
+    if summary.is_empty() {
+        return Err("Indica um título para o evento.".into());
+    }
+    if event_id.trim().is_empty() {
+        return Err("ID do evento em falta.".into());
+    }
+    let refresh = get_refresh_token(app)?;
+    let access = refresh_access_token(app, &refresh).await?;
+
+    let body = build_event_value(
+        &summary,
+        all_day,
+        &start_iso,
+        &end_iso,
+        description.as_deref(),
+        location.as_deref(),
+        &extensions,
+        true,
+    );
+
+    let url = calendar_event_resource_url(calendar_id, event_id);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client
+        .patch(&url)
+        .query(&[("sendUpdates", "all")])
+        .bearer_auth(access)
+        .json(&body);
+    if extensions.request_google_meet {
+        req = req.query(&[("conferenceDataVersion", "1")]);
+    }
+    let res = req
+        .send()
+        .await
+        .map_err(|e| format!("Calendar API: {e}"))?;
+
+    if !res.status().is_success() {
+        let t = res.text().await.unwrap_or_default();
+        return Err(format_calendar_write_error("Não foi possível atualizar o evento", &t));
+    }
+
+    let updated: Value = res.json().await.map_err(|e| e.to_string())?;
+    let ev = event_from_api_item(&updated)
+        .ok_or_else(|| "Resposta inválida ao atualizar evento.".to_string())?;
     local_store::upsert_cached_event(app, &ev)?;
     Ok(ev)
 }

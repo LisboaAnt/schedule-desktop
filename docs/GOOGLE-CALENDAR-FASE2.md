@@ -21,7 +21,7 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 ## API Calendar v3 (referência)
 
 - Listar eventos: `events.list` com `calendarId`, `timeMin`, `timeMax`, e quando possível `syncToken` ou `updatedMin` para sync incremental.
-- Criar / atualizar / apagar: `events.insert`, `events.patch`, `events.delete`.
+- Criar / atualizar / apagar: `events.insert`, `events.patch`, `events.delete` (ids na URL com percent-encoding via `urlencoding`).
 
 ## Modelo local
 

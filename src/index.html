@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Agenda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="event-editor-google.css" />
     <script type="module" src="/main.js" defer></script>
   </head>
   <body class="theme-dark view-widget">
@@ -46,6 +53,15 @@
             </button>
             <button type="button" id="btn-mode" class="btn-icon" title="Alternar widget / app">
               ⛶
+            </button>
+            <button
+              type="button"
+              id="btn-new-gc-event"
+              class="btn-icon hidden"
+              title="Novo evento (Google Calendar)"
+              aria-label="Novo evento Google"
+            >
+              +
             </button>
             <button
               type="button"
@@ -94,6 +110,19 @@
           <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" />
         </label>
 
+        <h3 class="settings-title settings-title-spaced">Arranque e bandeja</h3>
+        <label class="field field-checkbox-row">
+          <input type="checkbox" id="chk-start-windows" />
+          <span>Iniciar com o Windows</span>
+        </label>
+        <label class="field field-checkbox-row">
+          <input type="checkbox" id="chk-close-to-tray" />
+          <span>Ao fechar a janela, ocultar na bandeja (não sair)</span>
+        </label>
+        <p class="settings-info settings-info-compact">
+          Com «ocultar na bandeja», usa o ícone da bandeja → <strong>Sair</strong> para fechar a aplicação por completo.
+        </p>
+
         <h3 class="settings-title settings-title-spaced">Conta e sincronização</h3>
         <p class="settings-info" id="calendar-state-line">A carregar estado…</p>
         <p class="settings-info settings-info-muted hidden" id="calendar-client-id-hint"></p>
@@ -106,34 +135,28 @@
           </button>
         </div>
 
+        <label class="field field-spaced-top">
+          <span>Sincronização automática</span>
+          <select id="select-auto-sync" title="Pedidos à API Google só com sessão ligada">
+            <option value="0">Desligada</option>
+            <option value="5">A cada 5 minutos</option>
+            <option value="15">A cada 15 minutos</option>
+            <option value="30">A cada 30 minutos</option>
+            <option value="60">A cada 60 minutos</option>
+          </select>
+        </label>
+        <p class="settings-info settings-info-compact">
+          Ao voltares à janela, a agenda sincroniza no máximo de 90 em 90 segundos (se estiveres ligado ao Google).
+        </p>
+
         <div class="create-google-event-block hidden" id="create-google-event-block">
-          <h3 class="settings-title settings-title-spaced">Criar evento (Google)</h3>
+          <h3 class="settings-title settings-title-spaced">Novo evento</h3>
           <p class="settings-info settings-info-compact">
-            O evento é criado no teu calendário principal e aparece na grelha após guardar.
+            Abre o editor ao estilo Google Calendar (título, datas, local, descrição).
           </p>
-          <label class="field">
-            <span>Título</span>
-            <input type="text" id="new-event-summary" maxlength="500" placeholder="Reunião, lembrete…" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span>Data</span>
-            <input type="date" id="new-event-date" />
-          </label>
-          <label class="field field-checkbox">
-            <input type="checkbox" id="new-event-allday" />
-            <span>Dia inteiro</span>
-          </label>
-          <div class="field-row" id="new-event-time-row">
-            <label class="field field-inline">
-              <span>Início</span>
-              <input type="time" id="new-event-time-start" value="09:00" />
-            </label>
-            <label class="field field-inline">
-              <span>Fim</span>
-              <input type="time" id="new-event-time-end" value="10:00" />
-            </label>
-          </div>
-          <button type="button" class="btn-secondary btn-sync-primary" id="btn-new-google-event">Criar no Google Calendar</button>
+          <button type="button" class="btn-secondary btn-sync-primary" id="btn-open-gc-editor">
+            Novo evento no Google Calendar
+          </button>
         </div>
 
         <h3 class="settings-title settings-title-spaced">Ficar atrás de outras janelas</h3>
@@ -146,6 +169,202 @@
           Posição e tamanho da janela são guardados ao fechar.
         </p>
       </section>
+
+      <div id="event-editor-overlay" class="gc-editor-overlay hidden" aria-hidden="true">
+        <div class="gc-editor-backdrop" id="event-editor-backdrop" aria-label="Fechar"></div>
+        <div class="gc-editor-dialog" role="dialog" aria-label="Evento">
+          <input type="hidden" id="edit-event-id" value="" />
+          <input type="hidden" id="edit-calendar-id" value="primary" />
+
+          <header class="gc-editor-header">
+            <button type="button" class="gc-icon-btn" id="gc-btn-close" aria-label="Fechar">×</button>
+            <input
+              type="text"
+              class="gc-title-input"
+              id="gc-title"
+              maxlength="500"
+              placeholder="Adicionar título"
+              autocomplete="off"
+            />
+            <div class="gc-header-actions">
+              <details class="gc-more-details" id="gc-more-details">
+                <summary class="gc-more-summary">Mais ações</summary>
+                <div class="gc-more-menu">
+                  <button type="button" id="gc-menu-delete">Eliminar evento</button>
+                </div>
+              </details>
+              <button type="button" class="gc-btn-save" id="gc-btn-save">Salvar</button>
+            </div>
+          </header>
+
+          <section class="gc-datetime-section">
+            <div class="gc-timed-only" id="gc-timed-block">
+              <div class="gc-datetime-row">
+                <input class="gc-field-pill" type="date" id="gc-start-date" />
+                <input class="gc-field-pill" type="time" id="gc-start-time" value="09:00" />
+                <span class="gc-datetime-sep">até</span>
+                <input class="gc-field-pill" type="time" id="gc-end-time" value="10:00" />
+                <input class="gc-field-pill" type="date" id="gc-end-date" />
+              </div>
+            </div>
+            <div class="gc-allday-only" id="gc-allday-block">
+              <div class="gc-datetime-row">
+                <input class="gc-field-pill" type="date" id="gc-allday-date" />
+              </div>
+            </div>
+            <div class="gc-tz-row">
+              <span id="gc-tz-label"></span>
+              <span class="gc-link" id="gc-tz-fake" role="button" tabindex="0">Fuso horário</span>
+            </div>
+            <div class="gc-options-row">
+              <label class="gc-checkbox-label">
+                <input type="checkbox" id="gc-allday" />
+                <span>Dia inteiro</span>
+              </label>
+              <select class="gc-select" id="gc-repeat" aria-label="Repetição">
+                <option value="none">Não se repete</option>
+                <option value="daily">Todos os dias</option>
+                <option value="weekly">Todas as semanas</option>
+                <option value="monthly">Todos os meses</option>
+                <option value="yearly">Todos os anos</option>
+              </select>
+            </div>
+          </section>
+
+          <div class="gc-columns">
+            <div class="gc-col-main">
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">▶</span>
+                <div class="gc-row-body gc-meet-block">
+                  <a
+                    class="gc-meet-open hidden"
+                    id="gc-meet-open"
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >Abrir Google Meet</a>
+                  <label class="gc-checkbox-label" id="gc-meet-add-label">
+                    <input type="checkbox" id="gc-request-meet" />
+                    <span>Adicionar Google Meet a este evento</span>
+                  </label>
+                </div>
+              </div>
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">📍</span>
+                <div class="gc-row-body">
+                  <input
+                    type="text"
+                    class="gc-input-line"
+                    id="gc-location"
+                    placeholder="Adicionar local"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">🔔</span>
+                <div class="gc-row-body">
+                  <label class="gc-checkbox-label gc-reminder-default-wrap">
+                    <input type="checkbox" id="gc-reminders-default" checked />
+                    <span>Usar notificações predefinidas do calendário</span>
+                  </label>
+                  <div class="gc-notify-row" id="gc-reminder-custom-row">
+                    <span class="gc-muted-inline">Lembrete popup</span>
+                    <select class="gc-select" id="gc-reminder-minutes" aria-label="Minutos antes">
+                      <option value="0">No horário do evento</option>
+                      <option value="5">5 minutos antes</option>
+                      <option value="10">10 minutos antes</option>
+                      <option value="15">15 minutos antes</option>
+                      <option value="30" selected>30 minutos antes</option>
+                      <option value="60">1 hora antes</option>
+                      <option value="120">2 horas antes</option>
+                      <option value="1440">1 dia antes</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">▦</span>
+                <div class="gc-row-body gc-calendar-row">
+                  <span class="gc-calendar-name" id="gc-calendar-name">Calendário principal</span>
+                  <select class="gc-select gc-color-select" id="gc-color" aria-label="Cor do evento">
+                    <option value="">Cor predefinida</option>
+                    <option value="1">Lavanda</option>
+                    <option value="2">Verde salvia</option>
+                    <option value="3">Uva</option>
+                    <option value="4">Flamingo</option>
+                    <option value="5">Banana</option>
+                    <option value="6">Mandarina</option>
+                    <option value="7">Cocktail</option>
+                    <option value="8">Azul grafite</option>
+                    <option value="9">Mirtilo</option>
+                    <option value="10">Amoreira</option>
+                    <option value="11">Ruibarbo</option>
+                  </select>
+                </div>
+              </div>
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">💼</span>
+                <div class="gc-row-body gc-calendar-row">
+                  <select class="gc-select" id="gc-transparency" aria-label="Disponibilidade">
+                    <option value="opaque">Ocupado</option>
+                    <option value="transparent">Livre</option>
+                  </select>
+                  <select class="gc-select" id="gc-visibility" aria-label="Visibilidade">
+                    <option value="default">Visibilidade predefinida</option>
+                    <option value="public">Público</option>
+                    <option value="private">Privado</option>
+                    <option value="confidential">Confidencial</option>
+                  </select>
+                </div>
+              </div>
+              <div class="gc-row">
+                <span class="gc-row-icon" aria-hidden="true">≡</span>
+                <div class="gc-row-body">
+                  <div class="gc-desc-toolbar" aria-hidden="true">
+                    <span class="gc-desc-tool" title="Negrito"><b>B</b></span>
+                    <span class="gc-desc-tool" title="Itálico"><i>I</i></span>
+                    <span class="gc-desc-tool" title="Sublinhado"><u>S</u></span>
+                  </div>
+                  <textarea
+                    class="gc-textarea"
+                    id="gc-description"
+                    placeholder="Adicionar uma descrição"
+                    rows="5"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+            <aside class="gc-col-side">
+              <h4 class="gc-side-title">Convidados</h4>
+              <textarea
+                class="gc-guest-input gc-guest-textarea"
+                id="gc-guests"
+                rows="3"
+                placeholder="E-mails separados por vírgula ou nova linha"
+                spellcheck="false"
+              ></textarea>
+              <p class="gc-perms-title">Permissões de convidados</p>
+              <label class="gc-perm-item">
+                <input type="checkbox" id="gc-guest-modify" />
+                <span>Modificar evento</span>
+              </label>
+              <label class="gc-perm-item">
+                <input type="checkbox" id="gc-guest-invite" checked />
+                <span>Convidar outras pessoas</span>
+              </label>
+              <label class="gc-perm-item">
+                <input type="checkbox" id="gc-guest-see" checked />
+                <span>Ver lista de convidados</span>
+              </label>
+              <p class="gc-muted">
+                Os convidados recebem convite por e-mail (conforme definições da tua conta Google). Repetições complexas podem
+                aparecer só no Google Calendar.
+              </p>
+            </aside>
+          </div>
+        </div>
+      </div>
     </div>
   </body>
 </html>

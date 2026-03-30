@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -50,6 +50,16 @@ pub struct AppConfig {
     pub agenda_view: String,
     #[serde(default)]
     pub desktop_behind_icons: bool,
+    /// 0 = desligado; ex.: 5, 15, 30, 60 (minutos) para sincronizar com a API em segundo plano.
+    #[serde(default = "default_auto_sync_minutes")]
+    pub auto_sync_minutes: u32,
+    /// Fechar a janela principal apenas oculta; sair pela bandeja.
+    #[serde(default)]
+    pub close_to_tray: bool,
+}
+
+fn default_auto_sync_minutes() -> u32 {
+    0
 }
 
 fn default_opacity() -> f64 {
@@ -68,6 +78,8 @@ impl Default for AppConfig {
             widget_opacity: 1.0,
             agenda_view: default_agenda_view(),
             desktop_behind_icons: false,
+            auto_sync_minutes: 0,
+            close_to_tray: false,
         }
     }
 }
@@ -193,12 +205,35 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(
         app,
         "tray_bring_front",
-        "Mostrar agenda à frente",
+        "Mostrar agenda",
         true,
         Option::<&str>::None,
     )?;
-    let menu = Menu::with_items(app, &[&show])?;
+    let hide = MenuItem::with_id(
+        app,
+        "tray_hide",
+        "Ocultar janela",
+        true,
+        Option::<&str>::None,
+    )?;
+    let quit = MenuItem::with_id(
+        app,
+        "tray_quit",
+        "Sair",
+        true,
+        Option::<&str>::None,
+    )?;
+
+    let menu = MenuBuilder::new(app)
+        .item(&show)
+        .item(&hide)
+        .separator()
+        .item(&quit)
+        .build()?;
+
     let show_id = show.id().clone();
+    let hide_id = hide.id().clone();
+    let quit_id = quit.id().clone();
 
     let icon = match app.default_window_icon() {
         Some(i) => i.clone(),
@@ -208,11 +243,17 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     TrayIconBuilder::new()
         .menu(&menu)
         .icon(icon)
-        .tooltip("Agenda — clique para trazer à frente")
+        .tooltip("Agenda — clique para mostrar")
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
             if event.id == show_id {
                 let _ = bring_main_window_forward(app);
+            } else if event.id == hide_id {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            } else if event.id == quit_id {
+                app.exit(0);
             }
         })
         .on_tray_icon_event(|tray, event| {
@@ -228,6 +269,24 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build(app)?;
 
     Ok(())
+}
+
+/// Liga ou desliga o arranque com o sistema (Windows: registo de arranque; macOS/Linux: plugin autostart).
+#[tauri::command]
+async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let m = app.autolaunch();
+    if enabled {
+        m.enable().map_err(|e| e.to_string())
+    } else {
+        m.disable().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+async fn autostart_is_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -304,6 +363,12 @@ pub struct CreateGoogleEventPayload {
     pub all_day: bool,
     pub start_iso: String,
     pub end_iso: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub extensions: calendar_model::EventWriteExtensions,
 }
 
 #[tauri::command]
@@ -317,8 +382,63 @@ async fn google_calendar_create_event(
         payload.all_day,
         payload.start_iso,
         payload.end_iso,
+        payload.description,
+        payload.location,
+        payload.extensions,
     )
     .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateGoogleEventPayload {
+    pub calendar_id: String,
+    pub event_id: String,
+    pub summary: String,
+    pub all_day: bool,
+    pub start_iso: String,
+    pub end_iso: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub extensions: calendar_model::EventWriteExtensions,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteGoogleEventPayload {
+    pub calendar_id: String,
+    pub event_id: String,
+}
+
+#[tauri::command]
+async fn google_calendar_update_event(
+    app: tauri::AppHandle,
+    payload: UpdateGoogleEventPayload,
+) -> Result<calendar_model::CalendarEvent, String> {
+    google_calendar::update_calendar_event(
+        &app,
+        &payload.calendar_id,
+        &payload.event_id,
+        payload.summary,
+        payload.all_day,
+        payload.start_iso,
+        payload.end_iso,
+        payload.description,
+        payload.location,
+        payload.extensions,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn google_calendar_delete_event(
+    app: tauri::AppHandle,
+    payload: DeleteGoogleEventPayload,
+) -> Result<(), String> {
+    google_calendar::delete_calendar_event(&app, &payload.calendar_id, &payload.event_id).await
 }
 
 /// No Windows: ancora atrás dos ícones do ambiente de trabalho, esconde a barra (CSS) e abre a pílula “voltar”.
@@ -414,11 +534,30 @@ pub fn run() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None::<Vec<&str>>,
+        ))
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_denylist(&["restore-pill"])
                 .build(),
         )
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let handle = window.app_handle();
+                let hide_instead = read_config_file(handle)
+                    .map(|c| c.close_to_tray)
+                    .unwrap_or(false);
+                if hide_instead {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             undo_desktop_wallpaper_on_launch(app.handle());
             if let Err(e) = local_store::init(app.handle()) {
@@ -438,10 +577,14 @@ pub fn run() {
             google_calendar_disconnect,
             get_cached_calendar_events,
             google_calendar_create_event,
+            google_calendar_update_event,
+            google_calendar_delete_event,
             send_window_to_back,
             bring_window_to_front,
             reposition_restore_pill,
-            restore_desktop_wallpaper_mode
+            restore_desktop_wallpaper_mode,
+            autostart_set,
+            autostart_is_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

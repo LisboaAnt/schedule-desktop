@@ -598,6 +598,10 @@ input,
   margin-top: 20px;
 }
 
+.field-spaced-top {
+  margin-top: 14px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -605,6 +609,18 @@ input,
   margin-bottom: 14px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.field-checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.field-checkbox-row input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+  accent-color: var(--accent);
 }
 
 .field select,
@@ -758,4 +774,12 @@ input,
 
 .view-widget .shell {
   max-width: 100%;
+}
+
+.task-card--google {
+  cursor: pointer;
+}
+
+.task-card--google:hover {
+  filter: brightness(1.08);
 }

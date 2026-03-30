@@ -44,11 +44,47 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn migrate_cached_events_extra_columns(conn: &Connection) -> rusqlite::Result<()> {
+    let mut cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(cached_events)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<_, _>>()?;
+    if !cols.iter().any(|c| c == "description") {
+        conn.execute(
+            "ALTER TABLE cached_events ADD COLUMN description TEXT",
+            [],
+        )?;
+        cols.push("description".into());
+    }
+    if !cols.iter().any(|c| c == "location") {
+        conn.execute("ALTER TABLE cached_events ADD COLUMN location TEXT", [])?;
+    }
+    if !cols.iter().any(|c| c == "extras_json") {
+        conn.execute(
+            "ALTER TABLE cached_events ADD COLUMN extras_json TEXT",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+fn form_json(ev: &CalendarEvent) -> Option<String> {
+    use crate::calendar_model::CalendarEventForm;
+    ev.form.as_ref().and_then(|f| {
+        if f == &CalendarEventForm::default() {
+            None
+        } else {
+            serde_json::to_string(f).ok()
+        }
+    })
+}
+
 /// Cria o ficheiro SQLite e tabelas. Idempotente.
 pub fn init(app: &AppHandle) -> Result<(), String> {
     let path = db_path(app)?;
     let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
     init_schema(&conn).map_err(|e| format!("SQLite schema: {e}"))?;
+    migrate_cached_events_extra_columns(&conn).map_err(|e| format!("SQLite migrate: {e}"))?;
     INIT_OK.store(true, Ordering::SeqCst);
     Ok(())
 }
@@ -77,14 +113,17 @@ pub fn replace_calendar_events(
         .unwrap_or(0);
     for ev in events {
         tx.execute(
-            r#"INSERT INTO cached_events (id, calendar_id, summary, start_at, end_at, raw_json, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)"#,
+            r#"INSERT INTO cached_events (id, calendar_id, summary, start_at, end_at, description, location, extras_json, raw_json, updated_at_ms)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9)"#,
             rusqlite::params![
                 &ev.id,
                 &ev.calendar_id,
                 &ev.summary,
                 &ev.start_at,
                 &ev.end_at,
+                &ev.description,
+                &ev.location,
+                form_json(ev),
                 now,
             ],
         )
@@ -164,12 +203,15 @@ pub fn upsert_cached_event(app: &AppHandle, ev: &CalendarEvent) -> Result<(), St
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     conn.execute(
-        r#"INSERT INTO cached_events (id, calendar_id, summary, start_at, end_at, raw_json, updated_at_ms)
-           VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)
+        r#"INSERT INTO cached_events (id, calendar_id, summary, start_at, end_at, description, location, extras_json, raw_json, updated_at_ms)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9)
            ON CONFLICT(id, calendar_id) DO UPDATE SET
              summary = excluded.summary,
              start_at = excluded.start_at,
              end_at = excluded.end_at,
+             description = excluded.description,
+             location = excluded.location,
+             extras_json = excluded.extras_json,
              updated_at_ms = excluded.updated_at_ms"#,
         rusqlite::params![
             &ev.id,
@@ -177,6 +219,9 @@ pub fn upsert_cached_event(app: &AppHandle, ev: &CalendarEvent) -> Result<(), St
             &ev.summary,
             &ev.start_at,
             &ev.end_at,
+            &ev.description,
+            &ev.location,
+            form_json(ev),
             now,
         ],
     )
@@ -200,17 +245,22 @@ pub fn list_cached_events(app: &AppHandle) -> Result<Vec<CalendarEvent>, String>
     let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, calendar_id, summary, start_at, end_at FROM cached_events ORDER BY start_at",
+            "SELECT id, calendar_id, summary, start_at, end_at, description, location, extras_json FROM cached_events ORDER BY start_at",
         )
         .map_err(|e| e.to_string())?;
     let iter = stmt
         .query_map([], |row| {
+            let form_str: Option<String> = row.get(7)?;
+            let form = form_str.and_then(|s| serde_json::from_str(&s).ok());
             Ok(CalendarEvent {
                 id: row.get(0)?,
                 calendar_id: row.get(1)?,
                 summary: row.get(2)?,
                 start_at: row.get(3)?,
                 end_at: row.get(4)?,
+                description: row.get(5)?,
+                location: row.get(6)?,
+                form,
             })
         })
         .map_err(|e| e.to_string())?;

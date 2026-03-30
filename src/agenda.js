@@ -6,7 +6,7 @@ export function padIso(y, m, d) {
   return `${y}-${mm}-${dd}`;
 }
 
-/** @typedef {{ id: string, title: string, time?: string, color: string }} AgendaTask */
+/** @typedef {{ id: string, title: string, time?: string, color: string, calendarId?: string, startAt?: string|null, endAt?: string|null }} AgendaTask */
 
 /** @type {Record<string, AgendaTask[]>} */
 const DEMO = {};
@@ -71,6 +71,11 @@ export function setRemoteTasksByIso(map) {
 
 export function setUseGoogleCalendar(connected) {
   useGoogleCalendar = Boolean(connected);
+}
+
+/** Vista com dados Google (eventos editáveis na API). */
+export function isGoogleCalendarActive() {
+  return useGoogleCalendar;
 }
 
 /**
