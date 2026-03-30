@@ -23,6 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
+# OAuth / segredos locais (não versionar)
+.env
+google-oauth-client-id.local
+**/google_oauth_client_id.txt
+**/google_oauth_client_secret.txt
+
 # Tauri / Rust
 src-tauri/target/
 

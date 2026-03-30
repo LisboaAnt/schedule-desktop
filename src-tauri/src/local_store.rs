@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use tauri::{AppHandle, Manager};
 
 use crate::calendar_model::CalendarEvent;
@@ -100,6 +100,96 @@ pub fn clear_calendar_events(app: &AppHandle, calendar_id: &str) -> Result<(), S
     conn.execute(
         "DELETE FROM cached_events WHERE calendar_id = ?1",
         [calendar_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM sync_state WHERE calendar_id = ?1",
+        [calendar_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_sync_token(app: &AppHandle, calendar_id: &str) -> Result<Option<String>, String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    let col: Option<Option<String>> = conn
+        .query_row(
+            "SELECT sync_token FROM sync_state WHERE calendar_id = ?1",
+            [calendar_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(col.flatten().filter(|s| !s.is_empty()))
+}
+
+pub fn set_sync_state(
+    app: &AppHandle,
+    calendar_id: &str,
+    sync_token: Option<&str>,
+    last_sync_ms: i64,
+) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute(
+        r#"INSERT INTO sync_state (calendar_id, sync_token, last_sync_ms)
+           VALUES (?1, ?2, ?3)
+           ON CONFLICT(calendar_id) DO UPDATE SET
+             sync_token = excluded.sync_token,
+             last_sync_ms = excluded.last_sync_ms"#,
+        rusqlite::params![calendar_id, sync_token, last_sync_ms],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Remove só a linha de sync (ex.: token expirado, antes de sync completa).
+pub fn clear_sync_state_row(app: &AppHandle, calendar_id: &str) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute(
+        "DELETE FROM sync_state WHERE calendar_id = ?1",
+        [calendar_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn upsert_cached_event(app: &AppHandle, ev: &CalendarEvent) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        r#"INSERT INTO cached_events (id, calendar_id, summary, start_at, end_at, raw_json, updated_at_ms)
+           VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)
+           ON CONFLICT(id, calendar_id) DO UPDATE SET
+             summary = excluded.summary,
+             start_at = excluded.start_at,
+             end_at = excluded.end_at,
+             updated_at_ms = excluded.updated_at_ms"#,
+        rusqlite::params![
+            &ev.id,
+            &ev.calendar_id,
+            &ev.summary,
+            &ev.start_at,
+            &ev.end_at,
+            now,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn delete_cached_event(app: &AppHandle, calendar_id: &str, event_id: &str) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute(
+        "DELETE FROM cached_events WHERE calendar_id = ?1 AND id = ?2",
+        rusqlite::params![calendar_id, event_id],
     )
     .map_err(|e| e.to_string())?;
     Ok(())

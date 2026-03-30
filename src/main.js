@@ -391,6 +391,7 @@ async function loadConfig() {
   );
 
   renderAll();
+  await applyGoogleCalendarToGrid();
 }
 
 function syncSettingsToggleButton(inSettings) {
@@ -447,7 +448,7 @@ function isoKeyFromCalendarEvent(ev) {
 
 /** @param {Array<{ id: string, summary: string, startAt?: string|null }>} events */
 function eventsToByIso(events) {
-  /** @type {Record<string, import('./agenda.js').AgendaTask[]>} */
+  /** @type {Record<string, Array<{ id: string, title: string, time?: string, color: string }>>} */
   const map = {};
   for (const ev of events) {
     const iso = isoKeyFromCalendarEvent(ev);
@@ -492,7 +493,7 @@ function updateGoogleButtons(state) {
     if (!cfg) {
       hint.classList.remove("hidden");
       hint.textContent =
-        "Para OAuth: define a variável GOOGLE_OAUTH_CLIENT_ID ou cria o ficheiro google_oauth_client_id.txt na pasta de configuração da app (ver docs/GOOGLE-CALENDAR-FASE2.md). Na Google Cloud, regista o redirect http://127.0.0.1:PORT/callback (porta dinâmica).";
+        "Para OAuth: GOOGLE_OAUTH_CLIENT_ID (e, se o cliente for tipo Web na Google, GOOGLE_OAUTH_CLIENT_SECRET). Redirect: http://127.0.0.1:17892/callback (ver docs/GOOGLE-CALENDAR-FASE2.md).";
     } else {
       hint.classList.add("hidden");
       hint.textContent = "";
@@ -607,6 +608,40 @@ window.addEventListener("DOMContentLoaded", () => {
       appConfig.widgetOpacity = Number(e.target.value);
       await persistConfig();
     });
+
+  document.getElementById("btn-google-sign-in")?.addEventListener("click", async () => {
+    setCalendarOAuthMessage("");
+    try {
+      await invoke("google_calendar_sign_in");
+      setCalendarOAuthMessage("Sessão iniciada. Usa «Sincronizar agora» para trazer eventos.");
+      await refreshCalendarStateLine();
+      await applyGoogleCalendarToGrid();
+    } catch (e) {
+      setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-google-sync")?.addEventListener("click", async () => {
+    setCalendarOAuthMessage("");
+    try {
+      const n = await invoke("google_calendar_sync");
+      setCalendarOAuthMessage(`Sincronizados ${n} evento(s).`);
+      await applyGoogleCalendarToGrid();
+    } catch (e) {
+      setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-google-disconnect")?.addEventListener("click", async () => {
+    setCalendarOAuthMessage("");
+    try {
+      await invoke("google_calendar_disconnect");
+      await refreshCalendarStateLine();
+      await applyGoogleCalendarToGrid();
+    } catch (e) {
+      setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
 
   if (window.matchMedia) {
     window

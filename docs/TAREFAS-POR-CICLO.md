@@ -37,12 +37,12 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Tipo **CalendarEvent** unificado em Rust (`calendar_model.rs`) e comando **`get_calendar_state`** (UI ainda em demo).
 - [x] Documentação: [GOOGLE-CALENDAR-FASE2.md](./GOOGLE-CALENDAR-FASE2.md), [CICLOS-PROXIMOS.md](./CICLOS-PROXIMOS.md).
 - [ ] Projeto no **Google Cloud Console**: tipo de cliente OAuth adequado a app desktop, URIs de redirecionamento documentados.
-- [ ] Fluxo **OAuth2** (PKCE / localhost): login, troca de código, **refresh token** seguro.
-- [ ] Armazenar tokens com **Credential Manager** do Windows (ou abstração Tauri equivalente).
-- [ ] Cliente Calendar API v3 no **Rust**: listar calendários, `events.list` por intervalo.
+- [x] Fluxo **OAuth2** (PKCE / localhost): login, troca de código, **refresh token** seguro.
+- [x] Armazenar tokens com **Credential Manager** do Windows (ou abstração Tauri equivalente).
+- [x] Cliente Calendar API v3 no **Rust**: `events.list` por intervalo + **sync incremental** com `syncToken` (calendário `primary`).
 - [ ] **Criar / atualizar / apagar** evento e refletir no Google.
-- [ ] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API).
-- [ ] **SQLite**: cache de eventos + metadados de última sync (`syncToken` / `updatedMin` quando aplicável).
+- [x] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API) — leitura/listagem; escrita em falta.
+- [x] **SQLite**: cache de eventos + `sync_state` com `nextSyncToken` / incremental; `updatedMin` não usado.
 - [ ] **Fila offline**: mutações enfileiradas quando sem rede; envio com retry e tratamento de erro.
 - [ ] UI: lista/semana/mês mínimo viável + formulário de evento (título, início/fim, calendário).
 - [ ] Documentar **escopos** e limites de quota para utilizadores/contribuidores.

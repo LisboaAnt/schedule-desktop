@@ -384,6 +384,10 @@ fn restore_desktop_wallpaper_mode(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = dotenvy::dotenv();
+    if std::env::var("GOOGLE_OAUTH_CLIENT_ID").is_err() {
+        let _ = dotenvy::from_filename("../.env");
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(

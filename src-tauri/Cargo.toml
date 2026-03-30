@@ -28,6 +28,7 @@ base64 = { version = "0.22", features = ["std"] }
 url = "2"
 open = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+dotenvy = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

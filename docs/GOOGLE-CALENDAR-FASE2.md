@@ -7,7 +7,7 @@ Não coloques **client secret** nem refresh tokens no repositório. Usa variáve
 1. Cria um projeto (ou usa um existente).
 2. Ativa a **Google Calendar API**.
 3. **Credenciais** → criar ID de cliente **OAuth** → tipo **Aplicativo para computador** (ou “Desktop”) conforme a consola atual.
-4. **URIs de redirecionamento** autorizados: para fluxo com loopback, algo como `http://127.0.0.1:PORT/callback` (a porta pode ser fixa ou aleatória conforme implementação; documenta a escolha no código).
+4. **URIs de redirecionamento** autorizados: `http://127.0.0.1:17892/callback` (porta fixa definida em `src-tauri/src/google_calendar.rs`).
 5. Escopos mínimos sugeridos: `https://www.googleapis.com/auth/calendar` (ou escopos mais restritos se a API permitir para o teu caso).
 
 ## Fluxo recomendado (desktop)
@@ -24,7 +24,7 @@ Não coloques **client secret** nem refresh tokens no repositório. Usa variáve
 ## Modelo local
 
 - Tabela de cache com `id` de evento Google + `calendarId` + campos normalizados + `raw_json` opcional para campos extra.
-- Tabela `sync_state` para chaves por calendário (`syncToken`, `last_sync_ms`, etc.).
+- Tabela `sync_state` para chaves por calendário (`sync_token`, `last_sync_ms`). A app grava o `nextSyncToken` devolvido pela API após a última página de cada sync; nas sincronizações seguintes usa **sync incremental** (`syncToken`). Se a API responder **410 Gone**, o token é invalidado e corre-se de novo uma **sync completa** na janela de tempo (ver `google_calendar.rs`).
 
 ## Quando esta fase estiver pronta
 
