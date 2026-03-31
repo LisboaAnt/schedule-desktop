@@ -12,11 +12,13 @@ use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_ROUND,
     DWM_WINDOW_CORNER_PREFERENCE,
 };
-use windows::Win32::Graphics::Gdi::ScreenToClient;
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, SendMessageTimeoutW,
-    SetParent, SetWindowPos, SMTO_NORMAL, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
-    SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, HWND_TOP,
+    FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, IsZoomed,
+    SendMessageTimeoutW, SetParent, SetWindowPos, SMTO_NORMAL, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, HWND_TOP,
 };
 
 fn hwnd_or_default(r: windows::core::Result<HWND>) -> HWND {
@@ -67,6 +69,31 @@ unsafe fn outer_rect_screen(hwnd: HWND) -> Result<RECT, String> {
     let mut r = RECT::default();
     GetWindowRect(hwnd, &mut r).map_err(|e| format!("GetWindowRect: {e}"))?;
     Ok(r)
+}
+
+/// Com janela maximizada, `GetWindowRect` pode não coincidir com um único monitor (multi‑ecrã / DPI).
+/// Usamos a área de trabalho do monitor do HWND para posicionar como filho do WorkerW.
+unsafe fn work_area_screen_rect_for_window(hwnd: HWND) -> Result<RECT, String> {
+    let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if hmon.is_invalid() {
+        return outer_rect_screen(hwnd);
+    }
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !GetMonitorInfoW(hmon, &mut mi).as_bool() {
+        return outer_rect_screen(hwnd);
+    }
+    Ok(mi.rcWork)
+}
+
+unsafe fn screen_rect_for_reparent(hwnd: HWND) -> Result<RECT, String> {
+    if IsZoomed(hwnd).as_bool() {
+        work_area_screen_rect_for_window(hwnd)
+    } else {
+        outer_rect_screen(hwnd)
+    }
 }
 
 unsafe fn move_as_child_at_screen_rect(
@@ -128,12 +155,12 @@ pub fn set_behind_icons<R: Runtime>(window: &WebviewWindow<R>, enable: bool) -> 
         if enable {
             let parent = workerw_behind_icons()
                 .ok_or_else(|| "Camada WorkerW não encontrada.".to_string())?;
-            let rect = outer_rect_screen(hwnd)?;
+            let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, Some(parent)).map_err(|e| format!("SetParent: {e}"))?;
             move_as_child_at_screen_rect(hwnd, parent, &rect)?;
             set_dwm_corner_preference(hwnd, DWMWCP_ROUND);
         } else {
-            let rect = outer_rect_screen(hwnd)?;
+            let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, None).map_err(|e| format!("SetParent: {e}"))?;
             move_top_level_at_screen_rect(hwnd, &rect)?;
             set_dwm_corner_preference(hwnd, DWMWCP_DEFAULT);

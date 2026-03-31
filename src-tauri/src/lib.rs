@@ -121,6 +121,7 @@ fn undo_desktop_behind_if_needed(app: &tauri::AppHandle) {
     #[cfg(windows)]
     if let Some(win) = app.get_webview_window("main") {
         let _ = windows_desktop::set_behind_icons(&win, false);
+        clamp_webview_outer_to_work_area(&win);
     }
     let _ = write_config_file(app, &cfg);
 }
@@ -135,6 +136,7 @@ fn undo_desktop_wallpaper_on_launch(app: &tauri::AppHandle) {
         }
         if let Some(main) = app.get_webview_window("main") {
             let _ = windows_desktop::set_behind_icons(&main, false);
+            clamp_webview_outer_to_work_area(&main);
             let _ = main.eval(JS_WALLPAPER_LEAVE);
         }
     }
@@ -173,6 +175,89 @@ fn window_outer_intersects_any_monitor<R: Runtime>(
     Ok(monitors
         .iter()
         .any(|m| monitor_intersects_window_outer(m, position, size)))
+}
+
+/// Limita posição e tamanho externos à área útil do monitor que contém o centro da janela.
+/// Evita que, após desmaximizar ou `SetParent`/`SetWindowPos`, a largura “vaze” para outro ecrã.
+fn clamp_webview_outer_to_work_area<R: Runtime>(win: &WebviewWindow<R>) {
+    #[cfg(windows)]
+    if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+    if !win.is_visible().unwrap_or(false) {
+        return;
+    }
+    if win.is_minimized().unwrap_or(true) {
+        return;
+    }
+    if win.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let Ok(position) = win.outer_position() else {
+        return;
+    };
+    let Ok(size) = win.outer_size() else {
+        return;
+    };
+    let Ok(monitors) = win.available_monitors() else {
+        return;
+    };
+    let Some(m) = monitors.first() else {
+        return;
+    };
+    let cx = position.x + size.width as i32 / 2;
+    let cy = position.y + size.height as i32 / 2;
+    let m = monitors
+        .iter()
+        .find(|mon| {
+            let left = mon.position().x;
+            let top = mon.position().y;
+            let right = left + mon.size().width as i32;
+            let bottom = top + mon.size().height as i32;
+            cx >= left && cx < right && cy >= top && cy < bottom
+        })
+        .unwrap_or(m);
+    let wa = m.work_area();
+    let wl = wa.position.x;
+    let wt = wa.position.y;
+    let wr = wl + wa.size.width as i32;
+    let wb = wt + wa.size.height as i32;
+    let max_w = (wr - wl).max(160) as u32;
+    let max_h = (wb - wt).max(120) as u32;
+    let mut left = position.x;
+    let mut top = position.y;
+    let mut w = size.width;
+    let mut h = size.height;
+    if w > max_w {
+        w = max_w;
+    }
+    if h > max_h {
+        h = max_h;
+    }
+    if left + w as i32 > wr {
+        left = wr - w as i32;
+    }
+    if top + h as i32 > wb {
+        top = wb - h as i32;
+    }
+    if left < wl {
+        left = wl;
+    }
+    if top < wt {
+        top = wt;
+    }
+    if left == position.x && top == position.y && w == size.width && h == size.height {
+        return;
+    }
+    let _ = win.set_position(PhysicalPosition::new(left, top));
+    let _ = win.set_size(PhysicalSize::new(w, h));
+}
+
+fn clamp_main_window_outer_to_work_area<R: Runtime>(app: &AppHandle<R>) {
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    clamp_webview_outer_to_work_area(&win);
 }
 
 /// Se a janela principal não intersecta nenhum ecrã (ex.: coordenadas antigas após desligar um monitor), centra.
@@ -228,6 +313,7 @@ fn restore_desktop_wallpaper_mode_internal<R: Runtime>(app: &AppHandle<R>) -> Re
         .get_webview_window("main")
         .ok_or_else(|| "Janela principal em falta.".to_string())?;
     windows_desktop::set_behind_icons(&main, false)?;
+    clamp_webview_outer_to_work_area(&main);
     let _ = main.eval(JS_WALLPAPER_LEAVE);
     main.set_always_on_bottom(false).map_err(|e| e.to_string())?;
     let _ = main.unminimize();
@@ -578,6 +664,7 @@ fn window_toggle_maximized(app: tauri::AppHandle) -> Result<bool, String> {
         .ok_or_else(|| "Janela principal em falta.".to_string())?;
     if w.is_maximized().map_err(|e| e.to_string())? {
         w.unmaximize().map_err(|e| e.to_string())?;
+        clamp_webview_outer_to_work_area(&w);
         Ok(false)
     } else {
         w.maximize().map_err(|e| e.to_string())?;
@@ -596,6 +683,7 @@ fn window_is_maximized(app: tauri::AppHandle) -> Result<bool, String> {
 /// Garante que a janela principal não ficou fora de todos os monitores (útil após mudar ecrãs).
 #[tauri::command]
 fn ensure_main_window_on_screen(app: tauri::AppHandle) -> Result<(), String> {
+    clamp_main_window_outer_to_work_area(&app);
     clamp_main_window_to_visible_workspace(&app);
     Ok(())
 }
