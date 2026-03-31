@@ -29,8 +29,14 @@ google-oauth-client-id.local
 **/google_oauth_client_id.txt
 **/google_oauth_client_secret.txt
 
+# Bundle gerado (esbuild) — recriado em dev/build
+src/main.bundle.js
+
 # Tauri / Rust
 src-tauri/target/
+
+# Assinatura de atualizações (NUNCA versionar a chave privada)
+.tauri/signing.key
 
 # Ícone fonte opcional (regenerar com: cd src-tauri && npx tauri icon app-icon-source.png)
 src-tauri/app-icon-source.png

@@ -9,6 +9,8 @@ import {
   deleteLocalTask,
 } from "./agenda.js";
 
+import { getVersion } from "@tauri-apps/api/app";
+
 const { invoke } = window.__TAURI__.core;
 const tauriEvent = window.__TAURI__?.event;
 
@@ -1000,10 +1002,54 @@ async function loadConfig() {
   if (chkBorder) chkBorder.checked = appConfig.windowShowBorder !== false;
 
   void refreshAutostartCheckbox();
+  void refreshAppVersionLine();
 
   renderAll();
   await applyGoogleCalendarToGrid();
   void syncMaximizeButton();
+}
+
+async function refreshAppVersionLine() {
+  const el = document.getElementById("app-version-line");
+  if (!el) return;
+  try {
+    const v = await getVersion();
+    el.textContent = `Versão instalada: ${v}`;
+  } catch (_) {
+    el.textContent = "Versão: indisponível neste modo.";
+  }
+}
+
+async function checkForAppUpdates() {
+  const line = document.getElementById("update-status-line");
+  if (line) {
+    line.textContent = "A verificar…";
+  }
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    const update = await check();
+    if (!update) {
+      if (line) line.textContent = "Já tens a versão mais recente.";
+      return;
+    }
+    if (line) {
+      line.textContent = `Nova versão ${update.version} disponível. A descarregar…`;
+    }
+    await update.downloadAndInstall((event) => {
+      if (line && event.event === "Progress") {
+        line.textContent = "A descarregar…";
+      }
+    });
+    if (line) line.textContent = "Instalação concluída. A reiniciar…";
+    await relaunch();
+  } catch (e) {
+    const msg = e?.message || String(e);
+    if (line) {
+      line.textContent =
+        msg.length > 220 ? `${msg.slice(0, 220)}…` : msg;
+    }
+  }
 }
 
 async function refreshAutostartCheckbox() {
@@ -1513,6 +1559,10 @@ window.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       setCalendarOAuthMessage(e?.message || String(e));
     }
+  });
+
+  document.getElementById("btn-check-updates")?.addEventListener("click", () => {
+    void checkForAppUpdates();
   });
 
   document.getElementById("btn-open-data-folder")?.addEventListener("click", async () => {

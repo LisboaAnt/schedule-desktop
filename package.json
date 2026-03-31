@@ -5,12 +5,19 @@
   "type": "module",
   "description": "Calendário desktop Windows — widget + app (Tauri + Google Calendar)",
   "scripts": {
+    "build:frontend": "esbuild src/main.js --bundle --outfile=src/main.bundle.js --format=esm --platform=browser",
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "npm run build:frontend && tauri build",
     "build:ci": "tauri build --no-bundle --ci",
     "tauri": "tauri"
   },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-updater": "^2"
+  },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.25.0"
   }
 }

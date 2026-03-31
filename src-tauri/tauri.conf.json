@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.calendario.widget",
   "build": {
+    "beforeDevCommand": "npm run build:frontend",
+    "beforeBuildCommand": "npm run build:frontend",
     "frontendDist": "../src"
   },
   "app": {
@@ -31,6 +33,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -46,6 +49,15 @@
     "deep-link": {
       "desktop": {
         "schemes": ["agenda"]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVBNEFFQ0MwRjU5M0QwNkYKUldSdjBKUDF3T3hLNmtoMWJDdTM4OXVRYWVWZCszUUFEd3FRL2JWTG1zYi9TU0t2Vkxmd3N3M1UK",
+      "endpoints": [
+        "https://github.com/LisboaAnt/schedule-desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

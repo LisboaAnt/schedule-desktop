@@ -62,6 +62,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          # Chave privada Tauri (conteúdo do ficheiro .tauri/signing.key) — tem de corresponder ao pubkey em tauri.conf.json
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v__VERSION__
           releaseName: Agenda v__VERSION__
@@ -76,7 +78,7 @@ jobs:
             Builds não assinados: o SmartScreen pode mostrar aviso — «Mais informações» → «Executar na mesma».
           releaseDraft: false
           prerelease: false
-          uploadUpdaterJson: false
+          uploadUpdaterJson: true
           uploadWorkflowArtifacts: true
           args: --ci
 

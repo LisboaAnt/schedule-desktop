@@ -12,7 +12,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="event-editor-google.css" />
-    <script type="module" src="/main.js" defer></script>
+    <script type="module" src="/main.bundle.js" defer></script>
   </head>
   <body class="theme-dark view-widget">
     <div id="app" class="shell">
@@ -268,6 +268,24 @@
                   <p class="settings-callout settings-callout--subtle">
                     Ao voltares à janela, a agenda pode sincronizar no máximo de 90 em 90 segundos (com sessão Google ativa).
                   </p>
+                </div>
+              </article>
+
+              <article class="settings-card settings-card--wide">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Atualizações</h3>
+                  <p class="settings-card-desc">
+                    Procura novas versões publicadas no GitHub. Requer build assinado (Release).
+                  </p>
+                </div>
+                <div class="settings-card-body">
+                  <p class="settings-status" id="app-version-line" aria-live="polite">—</p>
+                  <div class="settings-actions settings-actions--grid">
+                    <button type="button" class="btn-secondary btn-sync-primary" id="btn-check-updates">
+                      Procurar atualizações
+                    </button>
+                  </div>
+                  <p class="settings-callout settings-callout--subtle" id="update-status-line" aria-live="polite"></p>
                 </div>
               </article>
 

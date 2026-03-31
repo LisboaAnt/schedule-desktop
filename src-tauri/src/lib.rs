@@ -954,6 +954,8 @@ pub fn run() {
                 .with_denylist(&["restore-pill"])
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
             if window.label() != "main" {
                 return;

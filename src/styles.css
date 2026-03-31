@@ -1181,6 +1181,10 @@ body.window-sharp-corners .agenda-panel .btn-secondary {
   border-color: var(--border);
 }
 
+#update-status-line:empty {
+  display: none;
+}
+
 .settings-callout--warn {
   border-color: rgba(251, 191, 36, 0.45);
   background: rgba(251, 191, 36, 0.08);
