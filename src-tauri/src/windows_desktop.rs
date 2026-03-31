@@ -9,7 +9,8 @@ use tauri::{Runtime, WebviewWindow};
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_ROUND,
+    DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE,
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_DONOTROUND, DWMWCP_ROUND,
     DWM_WINDOW_CORNER_PREFERENCE,
 };
 use windows::Win32::Graphics::Gdi::{
@@ -139,7 +140,6 @@ unsafe fn move_top_level_at_screen_rect(hwnd: HWND, screen: &RECT) -> Result<(),
     Ok(())
 }
 
-/// Após `SetParent` para o WorkerW o DWM costuma tratar a janela como retangular; pedimos cantos redondos (Win11+).
 unsafe fn set_dwm_corner_preference(hwnd: HWND, pref: DWM_WINDOW_CORNER_PREFERENCE) {
     let _ = DwmSetWindowAttribute(
         hwnd,
@@ -149,7 +149,55 @@ unsafe fn set_dwm_corner_preference(hwnd: HWND, pref: DWM_WINDOW_CORNER_PREFEREN
     );
 }
 
-pub fn set_behind_icons<R: Runtime>(window: &WebviewWindow<R>, enable: bool) -> Result<(), String> {
+/// Contorno desenhado pelo DWM (Win11+). `DWMWA_COLOR_NONE` remove; `DWMWA_COLOR_DEFAULT` repõe o sistema.
+unsafe fn set_dwm_border_visible(hwnd: HWND, show: bool) {
+    let color: u32 = if show {
+        DWMWA_COLOR_DEFAULT
+    } else {
+        DWMWA_COLOR_NONE
+    };
+    let _ = DwmSetWindowAttribute(
+        hwnd,
+        DWMWA_BORDER_COLOR,
+        &color as *const u32 as *const _,
+        std::mem::size_of::<u32>() as u32,
+    );
+}
+
+/// Cantos e borda ao nível do DWM (necessário quando a janela é filha do WorkerW — o CSS do WebView não molda o HWND).
+pub fn apply_wallpaper_dwm_style<R: Runtime>(
+    window: &WebviewWindow<R>,
+    rounded_corners: bool,
+    show_border: bool,
+) -> Result<(), String> {
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    unsafe {
+        set_dwm_corner_preference(
+            hwnd,
+            if rounded_corners {
+                DWMWCP_ROUND
+            } else {
+                DWMWCP_DONOTROUND
+            },
+        );
+        set_dwm_border_visible(hwnd, show_border);
+    }
+    Ok(())
+}
+
+fn reset_top_level_dwm(hwnd: HWND) {
+    unsafe {
+        set_dwm_corner_preference(hwnd, DWMWCP_DEFAULT);
+        set_dwm_border_visible(hwnd, true);
+    }
+}
+
+pub fn set_behind_icons<R: Runtime>(
+    window: &WebviewWindow<R>,
+    enable: bool,
+    rounded_corners: bool,
+    show_border: bool,
+) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     unsafe {
         if enable {
@@ -158,12 +206,20 @@ pub fn set_behind_icons<R: Runtime>(window: &WebviewWindow<R>, enable: bool) -> 
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, Some(parent)).map_err(|e| format!("SetParent: {e}"))?;
             move_as_child_at_screen_rect(hwnd, parent, &rect)?;
-            set_dwm_corner_preference(hwnd, DWMWCP_ROUND);
+            set_dwm_corner_preference(
+                hwnd,
+                if rounded_corners {
+                    DWMWCP_ROUND
+                } else {
+                    DWMWCP_DONOTROUND
+                },
+            );
+            set_dwm_border_visible(hwnd, show_border);
         } else {
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, None).map_err(|e| format!("SetParent: {e}"))?;
             move_top_level_at_screen_rect(hwnd, &rect)?;
-            set_dwm_corner_preference(hwnd, DWMWCP_DEFAULT);
+            reset_top_level_dwm(hwnd);
         }
     }
     Ok(())

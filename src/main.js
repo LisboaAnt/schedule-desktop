@@ -893,6 +893,16 @@ function applyWindowChrome() {
   document.body.classList.toggle("window-no-border", !border);
 }
 
+/** No modo «atrás dos ícones» o Windows desenha cantos/borda no HWND — precisa do Rust (DWM). */
+async function syncWallpaperDwmIfActive() {
+  if (!document.body.classList.contains("desktop-wallpaper-mode")) return;
+  try {
+    await invoke("sync_desktop_wallpaper_dwm_prefs");
+  } catch (e) {
+    console.warn("sync_desktop_wallpaper_dwm_prefs", e);
+  }
+}
+
 /** 0–65% (mais = janela mais transparente); opacidade = 1 − pct/100 (mín. 0,35) */
 function syncTransparencyControlsFromOpacity() {
   const pct = Math.min(
@@ -1506,12 +1516,14 @@ window.addEventListener("DOMContentLoaded", () => {
     appConfig.windowRoundedCorners = /** @type {HTMLInputElement} */ (e.target).checked;
     applyWindowChrome();
     await persistConfig();
+    await syncWallpaperDwmIfActive();
   });
 
   document.getElementById("chk-window-border")?.addEventListener("change", async (e) => {
     appConfig.windowShowBorder = /** @type {HTMLInputElement} */ (e.target).checked;
     applyWindowChrome();
     await persistConfig();
+    await syncWallpaperDwmIfActive();
   });
 
   document.getElementById("chk-start-windows")?.addEventListener("change", async (e) => {

@@ -132,7 +132,7 @@ fn undo_desktop_behind_if_needed(app: &tauri::AppHandle) {
     cfg.desktop_behind_icons = false;
     #[cfg(windows)]
     if let Some(win) = app.get_webview_window("main") {
-        let _ = windows_desktop::set_behind_icons(&win, false);
+        let _ = windows_desktop::set_behind_icons(&win, false, true, true);
         clamp_webview_outer_to_work_area(&win);
     }
     let _ = write_config_file(app, &cfg);
@@ -147,7 +147,7 @@ fn undo_desktop_wallpaper_on_launch(app: &tauri::AppHandle) {
             let _ = pill.close();
         }
         if let Some(main) = app.get_webview_window("main") {
-            let _ = windows_desktop::set_behind_icons(&main, false);
+            let _ = windows_desktop::set_behind_icons(&main, false, true, true);
             clamp_webview_outer_to_work_area(&main);
             let _ = main.eval(JS_WALLPAPER_LEAVE);
         }
@@ -324,7 +324,7 @@ fn restore_desktop_wallpaper_mode_internal<R: Runtime>(app: &AppHandle<R>) -> Re
     let main = app
         .get_webview_window("main")
         .ok_or_else(|| "Janela principal em falta.".to_string())?;
-    windows_desktop::set_behind_icons(&main, false)?;
+    windows_desktop::set_behind_icons(&main, false, true, true)?;
     clamp_webview_outer_to_work_area(&main);
     let _ = main.eval(JS_WALLPAPER_LEAVE);
     main.set_always_on_bottom(false).map_err(|e| e.to_string())?;
@@ -612,7 +612,13 @@ async fn send_window_to_back(app: tauri::AppHandle) -> Result<(), String> {
         main
             .eval(JS_WALLPAPER_ENTER)
             .map_err(|e| e.to_string())?;
-        windows_desktop::set_behind_icons(&main, true)?;
+        let cfg = read_config_file(&app).unwrap_or_default();
+        windows_desktop::set_behind_icons(
+            &main,
+            true,
+            cfg.window_rounded_corners,
+            cfg.window_show_border,
+        )?;
         DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
 
         if let Some(p) = app.get_webview_window("restore-pill") {
@@ -721,6 +727,27 @@ async fn reposition_restore_pill(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+/// Atualiza cantos/borda DWM no modo «atrás dos ícones» (o CSS não controla o contorno do HWND).
+#[tauri::command]
+fn sync_desktop_wallpaper_dwm_prefs(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let cfg = read_config_file(&app).map_err(|e| e.to_string())?;
+        let main = app
+            .get_webview_window("main")
+            .ok_or_else(|| "Janela principal em falta.".to_string())?;
+        windows_desktop::apply_wallpaper_dwm_style(
+            &main,
+            cfg.window_rounded_corners,
+            cfg.window_show_border,
+        )?;
+    }
+    Ok(())
+}
+
 /// Chamado pela janela pequena “voltar” e equivalente a trazer à frente quando o modo wallpaper está ativo.
 #[tauri::command]
 fn restore_desktop_wallpaper_mode(app: tauri::AppHandle) -> Result<(), String> {
@@ -808,6 +835,7 @@ pub fn run() {
             ensure_main_window_on_screen,
             reposition_restore_pill,
             restore_desktop_wallpaper_mode,
+            sync_desktop_wallpaper_dwm_prefs,
             autostart_set,
             autostart_is_enabled
         ])
