@@ -61,6 +61,11 @@ let monthLayoutDebounce = null;
 const MAX_TASKS_WEEK_COLUMN = 60;
 const MAX_TASKS_DAY_VIEW = 120;
 
+/** ISO do dia em que a vista Dia lista todos os eventos (sem limite). */
+let dayListShowAllIso = null;
+/** ISOs com coluna da semana expandida (todos os eventos desse dia). */
+const weekColumnShowAll = new Set();
+
 /** Dia inteiro (sem hora) primeiro; depois hora; depois título. */
 function compareAgendaTasks(a, b) {
   const aAll = !a.time;
@@ -676,17 +681,41 @@ function renderWeek() {
     const list = document.createElement("div");
     list.className = "week-col-tasks";
     const dayTasks = [...tasksForDay(iso)].sort(compareAgendaTasks);
-    const shown = dayTasks.slice(0, MAX_TASKS_WEEK_COLUMN);
+    const expanded = weekColumnShowAll.has(iso);
+    const cap = expanded ? dayTasks.length : MAX_TASKS_WEEK_COLUMN;
+    const shown = dayTasks.slice(0, cap);
     for (const t of shown) {
       list.append(renderTaskCard(t, false));
     }
-    if (dayTasks.length > MAX_TASKS_WEEK_COLUMN) {
+    if (dayTasks.length > MAX_TASKS_WEEK_COLUMN && !expanded) {
+      const n = dayTasks.length - MAX_TASKS_WEEK_COLUMN;
       const more = document.createElement("p");
       more.className = "week-more-tasks";
-      const n = dayTasks.length - MAX_TASKS_WEEK_COLUMN;
       more.textContent = `+${n} mais`;
-      more.title = `${n} evento(s) não listados nesta coluna — usa a vista Dia ou Mês.`;
+      more.title = `${n} evento(s) não listados nesta coluna.`;
       list.append(more);
+      const showBtn = document.createElement("button");
+      showBtn.type = "button";
+      showBtn.className = "btn-secondary week-show-all-btn";
+      showBtn.textContent = `Mostrar todos (${dayTasks.length})`;
+      showBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        weekColumnShowAll.add(iso);
+        renderWeek();
+      });
+      list.append(showBtn);
+    }
+    if (expanded && dayTasks.length > MAX_TASKS_WEEK_COLUMN) {
+      const less = document.createElement("button");
+      less.type = "button";
+      less.className = "btn-secondary week-show-less-btn";
+      less.textContent = `Mostrar só os primeiros ${MAX_TASKS_WEEK_COLUMN}`;
+      less.addEventListener("click", (e) => {
+        e.stopPropagation();
+        weekColumnShowAll.delete(iso);
+        renderWeek();
+      });
+      list.append(less);
     }
     if (dayTasks.length === 0) {
       const empty = document.createElement("p");
@@ -747,17 +776,41 @@ function renderDay() {
     return;
   }
 
-  const shown = tasks.slice(0, MAX_TASKS_DAY_VIEW);
+  const expanded = dayListShowAllIso === iso;
+  const cap = expanded ? tasks.length : MAX_TASKS_DAY_VIEW;
+  const shown = tasks.slice(0, cap);
   for (const t of shown) {
     root.append(renderTaskCard(t, true));
   }
-  if (tasks.length > MAX_TASKS_DAY_VIEW) {
+  if (tasks.length > MAX_TASKS_DAY_VIEW && !expanded) {
+    const n = tasks.length - MAX_TASKS_DAY_VIEW;
+    const box = document.createElement("div");
+    box.className = "day-more-actions";
     const foot = document.createElement("p");
     foot.className = "day-more-tasks";
-    const n = tasks.length - MAX_TASKS_DAY_VIEW;
-    foot.textContent = `… e mais ${n} evento(s). Abre a vista Mês ou reduz o intervalo sincronizado.`;
-    foot.title = `${n} eventos omitidos para manter a lista rápida.`;
-    root.append(foot);
+    foot.textContent = `${n} evento(s) ocultos para manter a lista rápida.`;
+    foot.title = "Podes expandir a lista abaixo.";
+    const showBtn = document.createElement("button");
+    showBtn.type = "button";
+    showBtn.className = "btn-secondary day-show-all-btn";
+    showBtn.textContent = `Mostrar todos os ${tasks.length}`;
+    showBtn.addEventListener("click", () => {
+      dayListShowAllIso = iso;
+      renderDay();
+    });
+    box.append(foot, showBtn);
+    root.append(box);
+  }
+  if (expanded && tasks.length > MAX_TASKS_DAY_VIEW) {
+    const less = document.createElement("button");
+    less.type = "button";
+    less.className = "btn-secondary day-show-less-btn";
+    less.textContent = `Mostrar só os primeiros ${MAX_TASKS_DAY_VIEW}`;
+    less.addEventListener("click", () => {
+      dayListShowAllIso = null;
+      renderDay();
+    });
+    root.append(less);
   }
 }
 
@@ -786,8 +839,10 @@ function navPrev() {
   if (agendaView === "month") {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
   } else if (agendaView === "week") {
+    weekColumnShowAll.clear();
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 7);
   } else {
+    dayListShowAllIso = null;
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() - 1);
   }
   renderAll();
@@ -797,8 +852,10 @@ function navNext() {
   if (agendaView === "month") {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
   } else if (agendaView === "week") {
+    weekColumnShowAll.clear();
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
   } else {
+    dayListShowAllIso = null;
     cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
   }
   renderAll();

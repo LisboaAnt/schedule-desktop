@@ -30,6 +30,7 @@ Agenda / calendário para **Windows 11** com:
 | [docs/ARQUITETURA-E-STACK.md](./docs/ARQUITETURA-E-STACK.md) | Stack recomendada (Tauri + WebView2), módulos, sync, otimizações, segurança |
 | [CHANGELOG.md](./CHANGELOG.md) | Alterações por versão |
 | [docs/MULTI-MONITOR.md](./docs/MULTI-MONITOR.md) | Vários ecrãs, estado da janela, modo atrás dos ícones |
+| [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) | Pacto de Contribuinte (comunidade) |
 
 Leia estes dois antes de implementar funcionalidades grandes.
 

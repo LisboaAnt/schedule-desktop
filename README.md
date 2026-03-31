@@ -48,6 +48,10 @@ npm run build
 
 Ver também **[CHANGELOG.md](CHANGELOG.md)** (secção *Unreleased* para o que ainda não está etiquetado em release).
 
+## Código de conduta
+
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1, português).
+
 ## Licença
 
 MIT — ver [LICENSE](LICENSE).

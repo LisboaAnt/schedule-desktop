@@ -69,7 +69,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 ## Fase 4 — Comunidade
 
 - [x] **CONTRIBUTING.md** (base): como rodar, PRs, sem secrets — expandir com branches/templates depois.
-- [ ] **CODE_OF_CONDUCT.md** (opcional mas recomendado para OSS).
+- [x] **CODE_OF_CONDUCT.md** (Pacto de Contribuinte 2.1, PT).
 - [x] Templates de **issue** (bug, feature) e **pull request** (`.github/ISSUE_TEMPLATE`, `pull_request_template.md`).
 - [x] **CHANGELOG.md** (secção *Unreleased* + evoluir por release).
 - [ ] Pipeline de **release**: artefatos `.msi`/`.exe` (ou nsis) anexados ao GitHub Releases.

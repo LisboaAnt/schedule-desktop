@@ -1,5 +1,6 @@
 # Contribuir
 
+0. Comportamento na comunidade: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 1. Lê [docs/COMO-RODAR.md](docs/COMO-RODAR.md) e [docs/PLANEJAMENTO.md](docs/PLANEJAMENTO.md).
 2. **Não** commits com secrets OAuth, refresh tokens ou `.env` com credenciais reais.
 3. Preferência por alterações **pequenas e focadas**; mantém a app **leve** (questiona dependências novas).

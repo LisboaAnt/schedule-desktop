@@ -6,7 +6,8 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 
 ### Alterado
 
-- **Listas Semana / Dia**: limite de cartões renderizados (60 por dia na semana, 120 no dia) com mensagem quando há mais eventos; ordenação alinhada à vista mês (`compareAgendaTasks`).
+- **Listas Semana / Dia**: limite 60/120 cartões com «+N mais»; «Mostrar todos» / «Mostrar só os primeiros N»; ordenação com `compareAgendaTasks`; expansão reposta ao mudar semana ou dia.
+- **Comunidade**: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1, PT).
 - **Multi-monitor**: se a janela principal não intersecta nenhum ecrã após restauro do estado, centra automaticamente (arranque com pequeno atraso, `RunEvent::Resumed`, foco da janela); comando `ensure_main_window_on_screen`. Ver [docs/MULTI-MONITOR.md](docs/MULTI-MONITOR.md).
 - **Transparência**: janela principal `transparent: true` (Tauri); slider em definições ajusta `--fill-a` nos fundos (CSS `rgb` com alpha) para ver o ambiente de trabalho; deixa de se usar só `opacity` no `body`.
 - **Definições**: transparência 0–65%; removida «densidade da vista»; `viewMode` gravado como `widget`; fundo da área rolável sem camada opaca extra.
