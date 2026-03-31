@@ -1,0 +1,41 @@
+name: Bug
+description: Comportamento incorreto, crash ou regressão
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado pelo reporte. **Não** incluas refresh tokens, passwords nem dados pessoais de calendário.
+  - type: input
+    id: version
+    attributes:
+      label: Versão ou commit
+      description: Ex. 0.1.0 ou hash curto do git
+    validations:
+      required: false
+  - type: textarea
+    id: actual
+    attributes:
+      label: O que aconteceu?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: O que esperavas?
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passos para reproduzir
+      placeholder: "1. …\n2. …"
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Ambiente
+      placeholder: Windows 11, WebView2 atualizado?, conta Google ligada?, etc.
+    validations:
+      required: false

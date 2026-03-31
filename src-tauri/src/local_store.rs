@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rusqlite::{Connection, OptionalExtension};
 use tauri::{AppHandle, Manager};
 
-use crate::calendar_model::CalendarEvent;
+use crate::calendar_model::{CalendarEvent, QueuedCalendarMutation};
 
 static INIT_OK: AtomicBool = AtomicBool::new(false);
 
@@ -38,6 +38,12 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             calendar_id TEXT PRIMARY KEY,
             sync_token TEXT,
             last_sync_ms INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS pending_mutations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            payload_json TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            last_error TEXT
         );
         "#,
     )?;
@@ -269,4 +275,81 @@ pub fn list_cached_events(app: &AppHandle) -> Result<Vec<CalendarEvent>, String>
         out.push(r.map_err(|e| e.to_string())?);
     }
     Ok(out)
+}
+
+pub fn pending_mutations_enqueue(
+    app: &AppHandle,
+    op: &QueuedCalendarMutation,
+) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    let json =
+        serde_json::to_string(op).map_err(|e| format!("fila offline: serializar: {e}"))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO pending_mutations (payload_json, created_at_ms, last_error) VALUES (?1, ?2, NULL)",
+        rusqlite::params![json, now],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Primeira mutação por ordem FIFO: `(id da linha, payload_json)`.
+pub fn pending_mutations_peek_first(app: &AppHandle) -> Result<Option<(i64, String)>, String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    let mut stmt = conn
+        .prepare("SELECT id, payload_json FROM pending_mutations ORDER BY id ASC LIMIT 1")
+        .map_err(|e| e.to_string())?;
+    let row = stmt
+        .query_row([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(row)
+}
+
+pub fn pending_mutations_remove(app: &AppHandle, row_id: i64) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute(
+        "DELETE FROM pending_mutations WHERE id = ?1",
+        [row_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn pending_mutations_set_last_error(
+    app: &AppHandle,
+    row_id: i64,
+    err: Option<&str>,
+) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute(
+        "UPDATE pending_mutations SET last_error = ?1 WHERE id = ?2",
+        rusqlite::params![err, row_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn pending_mutations_clear(app: &AppHandle) -> Result<(), String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    conn.execute("DELETE FROM pending_mutations", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn pending_mutations_len(app: &AppHandle) -> Result<u32, String> {
+    let path = db_path(app)?;
+    let conn = Connection::open(&path).map_err(|e| format!("SQLite open: {e}"))?;
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM pending_mutations", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok(n.max(0) as u32)
 }

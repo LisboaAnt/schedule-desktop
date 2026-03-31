@@ -54,6 +54,8 @@ let appConfig = {
 /** @type {ReturnType<typeof setInterval> | null} */
 let calendarAutoSyncTimer = null;
 let lastWindowFocusSyncMs = 0;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let monthLayoutDebounce = null;
 
 function startOfWeek(d) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -98,20 +100,77 @@ function renderWeekdayHeader() {
   }
 }
 
-function renderTaskDots(container, iso, max = 3) {
-  const tasks = tasksForDay(iso);
-  const slice = tasks.slice(0, max);
+/**
+ * Linhas de atividade por célula no mês, a partir da altura da vista (6 linhas × 7 colunas).
+ */
+function getMonthMaxVisibleTasks() {
+  const viewMonth = document.getElementById("view-month");
+  if (!viewMonth || viewMonth.classList.contains("hidden")) return 3;
+  const weekdayRow = document.getElementById("weekday-row");
+  const headH = weekdayRow?.offsetHeight ?? 22;
+  const gap = 8;
+  const gridH = viewMonth.clientHeight - headH - gap;
+  if (gridH < 36) return 2;
+  const cellH = gridH / 6;
+  const dayAndPadding = 24;
+  const chipRow = 18;
+  const usable = Math.max(0, cellH - dayAndPadding);
+  const n = Math.floor(usable / chipRow);
+  return Math.max(2, Math.min(18, n));
+}
+
+function scheduleMonthRelayoutFromResize() {
+  if (agendaView !== "month") return;
+  if (monthLayoutDebounce) clearTimeout(monthLayoutDebounce);
+  monthLayoutDebounce = setTimeout(() => {
+    monthLayoutDebounce = null;
+    renderMonth();
+  }, 120);
+}
+
+/** Vista mês: hora + título quando a célula tem largura; só pontos quando é estreita. */
+function renderMonthCellTasks(container, iso, maxVisible) {
+  const tasks = [...tasksForDay(iso)].sort((a, b) => {
+    const aAll = !a.time;
+    const bAll = !b.time;
+    if (aAll !== bAll) return aAll ? -1 : 1;
+    if (a.time && b.time) {
+      const c = a.time.localeCompare(b.time);
+      if (c !== 0) return c;
+    }
+    return (a.title || "").localeCompare(b.title || "", undefined, {
+      sensitivity: "base",
+    });
+  });
+  const slice = tasks.slice(0, maxVisible);
   for (const t of slice) {
+    const chip = document.createElement("div");
+    chip.className = "task-month-chip";
+    chip.title = t.time ? `${t.time} · ${t.title}` : t.title;
     const dot = document.createElement("span");
-    dot.className = "task-dot";
+    dot.className = "task-month-dot";
     dot.style.background = t.color;
-    dot.title = t.title;
-    container.append(dot);
+    dot.setAttribute("aria-hidden", "true");
+    const textWrap = document.createElement("span");
+    textWrap.className = "task-month-text";
+    if (t.time) {
+      const timeEl = document.createElement("span");
+      timeEl.className = "task-month-time";
+      timeEl.textContent = t.time;
+      textWrap.append(timeEl);
+    }
+    const titleEl = document.createElement("span");
+    titleEl.className = "task-month-title";
+    titleEl.textContent = t.title;
+    textWrap.append(titleEl);
+    chip.append(dot, textWrap);
+    container.append(chip);
   }
-  if (tasks.length > max) {
+  if (tasks.length > maxVisible) {
     const more = document.createElement("span");
     more.className = "task-more";
-    more.textContent = `+${tasks.length - max}`;
+    more.textContent = `+${tasks.length - maxVisible}`;
+    more.title = `${tasks.length - maxVisible} mais`;
     container.append(more);
   }
 }
@@ -121,6 +180,7 @@ function renderMonth() {
   const vm = cursor.getMonth();
   setTitlePeriod(`${MONTH_NAMES[vm]} ${vy}`);
 
+  const maxVisible = getMonthMaxVisibleTasks();
   const grid = document.getElementById("day-grid");
   grid.replaceChildren();
 
@@ -166,7 +226,7 @@ function renderMonth() {
     const tracks = document.createElement("div");
     tracks.className = "cell-tracks";
     if (taskCountForDay(iso) > 0) {
-      renderTaskDots(tracks, iso, 4);
+      renderMonthCellTasks(tracks, iso, maxVisible);
     }
     cell.append(tracks);
 
@@ -813,10 +873,16 @@ async function loadConfig() {
   const closeTray = document.getElementById("chk-close-to-tray");
   if (closeTray) closeTray.checked = Boolean(appConfig.closeToTray);
 
+  const layoutSel = document.getElementById("select-view-layout");
+  if (layoutSel) {
+    layoutSel.value = appConfig.viewMode === "app" ? "app" : "widget";
+  }
+
   void refreshAutostartCheckbox();
 
   renderAll();
   await applyGoogleCalendarToGrid();
+  void syncMaximizeButton();
 }
 
 async function refreshAutostartCheckbox() {
@@ -852,8 +918,13 @@ function updateSyncHint(state) {
   const h = document.getElementById("sync-hint");
   if (!h) return;
   if (state?.connected) {
-    h.textContent =
+    let t =
       "Google Calendar: usa + na barra para novo evento; na Semana ou Dia, clica num evento para editar. Podes ativar sincronização automática em Definições.";
+    const n = state.pendingMutationsCount ?? 0;
+    if (n > 0) {
+      t += ` Há ${n} alteração(ões) na fila offline — sincroniza para tentar enviar ao Google.`;
+    }
+    h.textContent = t;
   } else {
     h.textContent =
       "Dados de demonstração na grelha. Liga o Google em Definições (client ID + OAuth).";
@@ -917,7 +988,18 @@ function normalizeCalendarState(raw) {
   const connected = Boolean(raw.connected);
   const dbReady = Boolean(raw.dbReady ?? raw.db_ready);
   const source = typeof raw.source === "string" ? raw.source : "demo";
-  return { source, connected, dbReady, clientIdConfigured };
+  const pendingMutationsCount = Number(
+    raw.pendingMutationsCount ?? raw.pending_mutations_count ?? 0,
+  );
+  return {
+    source,
+    connected,
+    dbReady,
+    clientIdConfigured,
+    pendingMutationsCount: Number.isFinite(pendingMutationsCount)
+      ? Math.max(0, Math.floor(pendingMutationsCount))
+      : 0,
+  };
 }
 
 /** Depois de OAuth com sucesso: o backend já tem refresh token — garante botões ativos mesmo se o estado IPC atrasar. */
@@ -940,6 +1022,7 @@ async function calendarSyncFromApiQuiet() {
     const events = await invoke("get_cached_calendar_events");
     setRemoteTasksByIso(eventsToByIso(events));
     renderAll();
+    await bumpCalendarHintsFromBackend();
   } catch (e) {
     console.warn("calendarSyncFromApiQuiet", e);
   }
@@ -1012,6 +1095,14 @@ function updateGoogleButtons(state) {
   sync.disabled = !cfg || !state.connected;
   disc.disabled = !cfg || !state.connected;
 
+  const flushQ = document.getElementById("btn-google-flush-queue");
+  if (flushQ) {
+    const show =
+      cfg && state.connected && (state.pendingMutationsCount ?? 0) > 0;
+    flushQ.classList.toggle("hidden", !show);
+    flushQ.disabled = !show;
+  }
+
   const row = document.getElementById("calendar-actions");
   if (row) {
     if (cfg && state.connected) row.classList.add("has-google-session");
@@ -1035,6 +1126,30 @@ function updateGoogleButtons(state) {
   }
 }
 
+/** Atualiza texto da fila offline (barra de definições + dica de sync). */
+async function syncMaximizeButton() {
+  const b = document.getElementById("btn-maximize-window");
+  if (!b) return;
+  try {
+    const on = await invoke("window_is_maximized");
+    b.classList.toggle("active", Boolean(on));
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? "Restaurar tamanho da janela" : "Janela em tela cheia (maximizar)";
+  } catch (_) {
+    /* ignorar */
+  }
+}
+
+async function bumpCalendarHintsFromBackend() {
+  try {
+    const s = normalizeCalendarState(await invoke("get_calendar_state"));
+    updateSyncHint(s);
+    await refreshCalendarStateLine();
+  } catch (_) {
+    /* ignorar */
+  }
+}
+
 async function refreshCalendarStateLine() {
   const el = document.getElementById("calendar-state-line");
   if (!el) return;
@@ -1048,7 +1163,12 @@ async function refreshCalendarStateLine() {
     } else if (!s.connected) {
       el.textContent = `${db} Client ID configurado. Inicia sessão com Google para substituir o demo na grelha.`;
     } else {
-      el.textContent = `${db} Conta Google ligada — a grelha mostra eventos em cache (sincroniza para atualizar).`;
+      const q = s.pendingMutationsCount ?? 0;
+      const queue =
+        q > 0
+          ? ` Fila offline: ${q} pendente(s) — Sincronizar tenta enviar.`
+          : "";
+      el.textContent = `${db} Conta Google ligada — a grelha mostra eventos em cache (sincroniza para atualizar).${queue}`;
     }
   } catch (e) {
     el.textContent = `Não foi possível ler o estado: ${e?.message || String(e)}`;
@@ -1097,18 +1217,34 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.getElementById("btn-bring-front").addEventListener("click", async () => {
+  document.getElementById("btn-maximize-window")?.addEventListener("click", async () => {
     try {
-      await invoke("bring_window_to_front");
+      const on = await invoke("window_toggle_maximized");
+      const b = document.getElementById("btn-maximize-window");
+      if (b) {
+        b.classList.toggle("active", Boolean(on));
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.title = on ? "Restaurar tamanho da janela" : "Janela em tela cheia (maximizar)";
+      }
     } catch (e) {
       alert(e?.message || String(e));
     }
   });
 
-  document.getElementById("btn-mode").addEventListener("click", async () => {
-    appConfig.viewMode = appConfig.viewMode === "app" ? "widget" : "app";
-    applyViewMode(appConfig.viewMode);
-    await persistConfig();
+  document.getElementById("btn-minimize")?.addEventListener("click", async () => {
+    try {
+      await invoke("window_minimize");
+    } catch (e) {
+      alert(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-close-main")?.addEventListener("click", async () => {
+    try {
+      await invoke("window_close_main");
+    } catch (e) {
+      alert(e?.message || String(e));
+    }
   });
 
   document.getElementById("btn-settings").addEventListener("click", () => {
@@ -1123,6 +1259,13 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("select-theme").addEventListener("change", async (e) => {
     appConfig.theme = e.target.value;
     applyTheme(appConfig.theme);
+    await persistConfig();
+  });
+
+  document.getElementById("select-view-layout")?.addEventListener("change", async (e) => {
+    appConfig.viewMode =
+      /** @type {HTMLSelectElement} */ (e.target).value === "app" ? "app" : "widget";
+    applyViewMode(appConfig.viewMode);
     await persistConfig();
   });
 
@@ -1166,6 +1309,21 @@ window.addEventListener("DOMContentLoaded", () => {
       const n = await invoke("google_calendar_sync");
       setCalendarOAuthMessage(`Sincronizados ${n} evento(s).`);
       await applyGoogleCalendarToGrid();
+      await bumpCalendarHintsFromBackend();
+    } catch (e) {
+      setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-google-flush-queue")?.addEventListener("click", async () => {
+    setCalendarOAuthMessage("");
+    try {
+      const n = await invoke("google_calendar_flush_offline_queue");
+      await applyGoogleCalendarToGrid();
+      if (n > 0) {
+        setCalendarOAuthMessage(`Fila offline: enviadas ${n} alteração(ões).`);
+      }
+      await bumpCalendarHintsFromBackend();
     } catch (e) {
       setCalendarOAuthMessage(e?.message || String(e));
     }
@@ -1179,6 +1337,36 @@ window.addEventListener("DOMContentLoaded", () => {
       await applyGoogleCalendarToGrid();
     } catch (e) {
       setCalendarOAuthMessage(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-open-data-folder")?.addEventListener("click", async () => {
+    try {
+      await invoke("open_app_local_data_folder");
+    } catch (e) {
+      alert(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-open-config-folder")?.addEventListener("click", async () => {
+    try {
+      await invoke("open_app_config_folder");
+    } catch (e) {
+      alert(e?.message || String(e));
+    }
+  });
+
+  document.getElementById("btn-reset-window-layout")?.addEventListener("click", async () => {
+    if (
+      !confirm(
+        "Repor a janela ao tamanho inicial (380×520) e apagar a posição guardada?",
+      )
+    )
+      return;
+    try {
+      await invoke("reset_saved_window_layout");
+    } catch (e) {
+      alert(e?.message || String(e));
     }
   });
 
@@ -1215,6 +1403,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   window.addEventListener("focus", () => {
     void syncCalendarOnWindowFocusThrottled();
+    void syncMaximizeButton();
   });
 
   document.getElementById("gc-allday")?.addEventListener("change", () => {
@@ -1271,6 +1460,7 @@ window.addEventListener("DOMContentLoaded", () => {
       await applyGoogleCalendarToGrid();
     } catch (e) {
       alert(e?.message || String(e));
+      await bumpCalendarHintsFromBackend();
     }
   });
 
@@ -1290,6 +1480,7 @@ window.addEventListener("DOMContentLoaded", () => {
       await applyGoogleCalendarToGrid();
     } catch (e) {
       alert(e?.message || String(e));
+      await bumpCalendarHintsFromBackend();
     }
   });
 
@@ -1325,6 +1516,11 @@ window.addEventListener("DOMContentLoaded", () => {
       .addEventListener("change", () => {
         if (appConfig.theme === "system") applyTheme("system");
       });
+  }
+
+  const viewMonthEl = document.getElementById("view-month");
+  if (viewMonthEl && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => scheduleMonthRelayoutFromResize()).observe(viewMonthEl);
   }
 
   loadConfig();

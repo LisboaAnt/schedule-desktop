@@ -1,0 +1,24 @@
+name: Sugestão / melhoria
+description: Ideia de funcionalidade ou melhoria de UX
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema ou oportunidade
+      description: Que fricção ou limitação queres resolver?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposta
+      description: Como imaginas que deva funcionar (mesmo a alto nível)?
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+    validations:
+      required: false

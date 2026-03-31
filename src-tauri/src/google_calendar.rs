@@ -26,7 +26,9 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 use crate::calendar_model::{
-    CalendarAttendee, CalendarEvent, CalendarEventForm, EventWriteExtensions,
+    CalendarAttendee, CalendarEvent, CalendarEventForm, CreateGoogleEventPayload,
+    DeleteGoogleEventPayload, EventWriteExtensions, QueuedCalendarMutation,
+    UpdateGoogleEventPayload,
 };
 use crate::local_store;
 
@@ -477,6 +479,27 @@ fn format_calendar_write_error(context: &str, body: &str) -> String {
     s
 }
 
+/// Erro ao escrever na API: transitório (rede, 5xx, 429) vs permanente (4xx de validação, auth na API).
+#[derive(Debug)]
+pub enum CalendarMutationError {
+    Transient(String),
+    Permanent(String),
+}
+
+fn http_status_is_transient(status: reqwest::StatusCode) -> bool {
+    status.is_server_error()
+        || status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+}
+
+fn transient_queue_suffix() -> &'static str {
+    " A alteração ficou na fila offline; sincroniza a agenda para tentar enviar."
+}
+
+fn map_send_error(e: reqwest::Error) -> CalendarMutationError {
+    CalendarMutationError::Transient(format!("Calendar API: {e}"))
+}
+
 fn parse_event_times(item: &Value) -> (Option<String>, Option<String>) {
     let start = item.get("start");
     let end = item.get("end");
@@ -683,6 +706,7 @@ fn event_from_api_item(item: &Value) -> Option<CalendarEvent> {
 }
 
 /// Corpo JSON para `events.insert` / `events.patch`.
+#[allow(clippy::too_many_arguments)]
 fn build_event_value(
     summary: &str,
     all_day: bool,
@@ -756,9 +780,7 @@ fn build_event_value(
     );
 
     let attendees = sanitize_attendees(&ext.attendees);
-    if is_patch {
-        obj.insert("attendees".to_string(), Value::Array(attendees));
-    } else if !attendees.is_empty() {
+    if is_patch || !attendees.is_empty() {
         obj.insert("attendees".to_string(), Value::Array(attendees));
     }
 
@@ -1001,32 +1023,45 @@ pub async fn sync_primary_to_cache(app: &AppHandle) -> Result<usize, String> {
     sync_primary_full_window(app, &http, &access).await
 }
 
-/// Cria um evento no calendário `primary`. `start_iso` / `end_iso`: RFC3339 com hora, ou só `YYYY-MM-DD` se `all_day` (fim **exclusivo** no último dia).
+/// Cria um evento no calendário `primary`. Em falha de rede / 5xx / 429, enfileira e devolve mensagem com aviso da fila.
 pub async fn create_primary_calendar_event(
     app: &AppHandle,
-    summary: String,
-    all_day: bool,
-    start_iso: String,
-    end_iso: String,
-    description: Option<String>,
-    location: Option<String>,
-    extensions: EventWriteExtensions,
+    payload: CreateGoogleEventPayload,
 ) -> Result<CalendarEvent, String> {
-    let summary = summary.trim().to_string();
-    if summary.is_empty() {
-        return Err("Indica um título para o evento.".into());
+    match create_primary_calendar_event_impl(app, &payload).await {
+        Ok(ev) => Ok(ev),
+        Err(CalendarMutationError::Transient(e)) => {
+            let q = QueuedCalendarMutation::Create(payload.clone());
+            local_store::pending_mutations_enqueue(app, &q)?;
+            Err(format!("{e}{}", transient_queue_suffix()))
+        }
+        Err(CalendarMutationError::Permanent(e)) => Err(e),
     }
-    let refresh = get_refresh_token(app)?;
-    let access = refresh_access_token(app, &refresh).await?;
+}
+
+async fn create_primary_calendar_event_impl(
+    app: &AppHandle,
+    payload: &CreateGoogleEventPayload,
+) -> Result<CalendarEvent, CalendarMutationError> {
+    let summary = payload.summary.trim().to_string();
+    if summary.is_empty() {
+        return Err(CalendarMutationError::Permanent(
+            "Indica um título para o evento.".into(),
+        ));
+    }
+    let refresh = get_refresh_token(app).map_err(CalendarMutationError::Permanent)?;
+    let access = refresh_access_token(app, &refresh)
+        .await
+        .map_err(CalendarMutationError::Permanent)?;
 
     let body = build_event_value(
         &summary,
-        all_day,
-        &start_iso,
-        &end_iso,
-        description.as_deref(),
-        location.as_deref(),
-        &extensions,
+        payload.all_day,
+        &payload.start_iso,
+        &payload.end_iso,
+        payload.description.as_deref(),
+        payload.location.as_deref(),
+        &payload.extensions,
         false,
     );
 
@@ -1037,30 +1072,42 @@ pub async fn create_primary_calendar_event(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CalendarMutationError::Permanent(e.to_string()))?;
 
     let mut req = client
         .post(&url)
         .query(&[("sendUpdates", "all")])
         .bearer_auth(access)
         .json(&body);
-    if extensions.request_google_meet {
+    if payload.extensions.request_google_meet {
         req = req.query(&[("conferenceDataVersion", "1")]);
     }
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("Calendar API: {e}"))?;
+    let res = req.send().await.map_err(map_send_error)?;
 
-    if !res.status().is_success() {
+    let status = res.status();
+    if !status.is_success() {
         let t = res.text().await.unwrap_or_default();
-        return Err(format_calendar_write_error("Não foi possível criar o evento", &t));
+        if http_status_is_transient(status) {
+            return Err(CalendarMutationError::Transient(format!(
+                "Não foi possível criar o evento (HTTP {}): {}",
+                status.as_u16(),
+                t.trim()
+            )));
+        }
+        return Err(CalendarMutationError::Permanent(format_calendar_write_error(
+            "Não foi possível criar o evento",
+            &t,
+        )));
     }
 
-    let created: Value = res.json().await.map_err(|e| e.to_string())?;
-    let ev = event_from_api_item(&created)
-        .ok_or_else(|| "Resposta inválida ao criar evento.".to_string())?;
-    local_store::upsert_cached_event(app, &ev)?;
+    let created: Value = res
+        .json()
+        .await
+        .map_err(|e| CalendarMutationError::Permanent(e.to_string()))?;
+    let ev = event_from_api_item(&created).ok_or_else(|| {
+        CalendarMutationError::Permanent("Resposta inválida ao criar evento.".into())
+    })?;
+    local_store::upsert_cached_event(app, &ev).map_err(CalendarMutationError::Permanent)?;
     Ok(ev)
 }
 
@@ -1074,101 +1121,206 @@ fn calendar_event_resource_url(calendar_id: &str, event_id: &str) -> String {
 
 pub async fn delete_calendar_event(
     app: &AppHandle,
-    calendar_id: &str,
-    event_id: &str,
+    payload: DeleteGoogleEventPayload,
 ) -> Result<(), String> {
-    if event_id.trim().is_empty() {
-        return Err("ID do evento em falta.".into());
+    match delete_calendar_event_impl(app, &payload).await {
+        Ok(()) => Ok(()),
+        Err(CalendarMutationError::Transient(e)) => {
+            let q = QueuedCalendarMutation::Delete(payload.clone());
+            local_store::pending_mutations_enqueue(app, &q)?;
+            Err(format!("{e}{}", transient_queue_suffix()))
+        }
+        Err(CalendarMutationError::Permanent(e)) => Err(e),
     }
-    let refresh = get_refresh_token(app)?;
-    let access = refresh_access_token(app, &refresh).await?;
+}
+
+async fn delete_calendar_event_impl(
+    app: &AppHandle,
+    payload: &DeleteGoogleEventPayload,
+) -> Result<(), CalendarMutationError> {
+    let calendar_id = payload.calendar_id.as_str();
+    let event_id = payload.event_id.as_str();
+    if event_id.trim().is_empty() {
+        return Err(CalendarMutationError::Permanent(
+            "ID do evento em falta.".into(),
+        ));
+    }
+    let refresh = get_refresh_token(app).map_err(CalendarMutationError::Permanent)?;
+    let access = refresh_access_token(app, &refresh)
+        .await
+        .map_err(CalendarMutationError::Permanent)?;
     let url = calendar_event_resource_url(calendar_id, event_id);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CalendarMutationError::Permanent(e.to_string()))?;
     let res = client
         .delete(&url)
         .query(&[("sendUpdates", "all")])
         .bearer_auth(access)
         .send()
         .await
-        .map_err(|e| format!("Calendar API: {e}"))?;
-    if !res.status().is_success() {
-        let t = res.text().await.unwrap_or_default();
-        return Err(format_calendar_write_error("Não foi possível apagar o evento", &t));
+        .map_err(map_send_error)?;
+    let status = res.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        local_store::delete_cached_event(app, calendar_id, event_id)
+            .map_err(CalendarMutationError::Permanent)?;
+        return Ok(());
     }
-    // 204 No Content — sem JSON
-    local_store::delete_cached_event(app, calendar_id, event_id)?;
+    if !status.is_success() {
+        let t = res.text().await.unwrap_or_default();
+        if http_status_is_transient(status) {
+            return Err(CalendarMutationError::Transient(format!(
+                "Não foi possível apagar o evento (HTTP {}): {}",
+                status.as_u16(),
+                t.trim()
+            )));
+        }
+        return Err(CalendarMutationError::Permanent(format_calendar_write_error(
+            "Não foi possível apagar o evento",
+            &t,
+        )));
+    }
+    local_store::delete_cached_event(app, calendar_id, event_id).map_err(CalendarMutationError::Permanent)?;
     Ok(())
 }
 
 pub async fn update_calendar_event(
     app: &AppHandle,
-    calendar_id: &str,
-    event_id: &str,
-    summary: String,
-    all_day: bool,
-    start_iso: String,
-    end_iso: String,
-    description: Option<String>,
-    location: Option<String>,
-    extensions: EventWriteExtensions,
+    payload: UpdateGoogleEventPayload,
 ) -> Result<CalendarEvent, String> {
-    let summary = summary.trim().to_string();
+    match update_calendar_event_impl(app, &payload).await {
+        Ok(ev) => Ok(ev),
+        Err(CalendarMutationError::Transient(e)) => {
+            let q = QueuedCalendarMutation::Update(payload.clone());
+            local_store::pending_mutations_enqueue(app, &q)?;
+            Err(format!("{e}{}", transient_queue_suffix()))
+        }
+        Err(CalendarMutationError::Permanent(e)) => Err(e),
+    }
+}
+
+async fn update_calendar_event_impl(
+    app: &AppHandle,
+    payload: &UpdateGoogleEventPayload,
+) -> Result<CalendarEvent, CalendarMutationError> {
+    let summary = payload.summary.trim().to_string();
     if summary.is_empty() {
-        return Err("Indica um título para o evento.".into());
+        return Err(CalendarMutationError::Permanent(
+            "Indica um título para o evento.".into(),
+        ));
     }
-    if event_id.trim().is_empty() {
-        return Err("ID do evento em falta.".into());
+    if payload.event_id.trim().is_empty() {
+        return Err(CalendarMutationError::Permanent(
+            "ID do evento em falta.".into(),
+        ));
     }
-    let refresh = get_refresh_token(app)?;
-    let access = refresh_access_token(app, &refresh).await?;
+    let refresh = get_refresh_token(app).map_err(CalendarMutationError::Permanent)?;
+    let access = refresh_access_token(app, &refresh)
+        .await
+        .map_err(CalendarMutationError::Permanent)?;
 
     let body = build_event_value(
         &summary,
-        all_day,
-        &start_iso,
-        &end_iso,
-        description.as_deref(),
-        location.as_deref(),
-        &extensions,
+        payload.all_day,
+        &payload.start_iso,
+        &payload.end_iso,
+        payload.description.as_deref(),
+        payload.location.as_deref(),
+        &payload.extensions,
         true,
     );
 
-    let url = calendar_event_resource_url(calendar_id, event_id);
+    let url = calendar_event_resource_url(&payload.calendar_id, &payload.event_id);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CalendarMutationError::Permanent(e.to_string()))?;
 
     let mut req = client
         .patch(&url)
         .query(&[("sendUpdates", "all")])
         .bearer_auth(access)
         .json(&body);
-    if extensions.request_google_meet {
+    if payload.extensions.request_google_meet {
         req = req.query(&[("conferenceDataVersion", "1")]);
     }
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("Calendar API: {e}"))?;
+    let res = req.send().await.map_err(map_send_error)?;
 
-    if !res.status().is_success() {
+    let status = res.status();
+    if !status.is_success() {
         let t = res.text().await.unwrap_or_default();
-        return Err(format_calendar_write_error("Não foi possível atualizar o evento", &t));
+        if http_status_is_transient(status) {
+            return Err(CalendarMutationError::Transient(format!(
+                "Não foi possível atualizar o evento (HTTP {}): {}",
+                status.as_u16(),
+                t.trim()
+            )));
+        }
+        return Err(CalendarMutationError::Permanent(format_calendar_write_error(
+            "Não foi possível atualizar o evento",
+            &t,
+        )));
     }
 
-    let updated: Value = res.json().await.map_err(|e| e.to_string())?;
-    let ev = event_from_api_item(&updated)
-        .ok_or_else(|| "Resposta inválida ao atualizar evento.".to_string())?;
-    local_store::upsert_cached_event(app, &ev)?;
+    let updated: Value = res
+        .json()
+        .await
+        .map_err(|e| CalendarMutationError::Permanent(e.to_string()))?;
+    let ev = event_from_api_item(&updated).ok_or_else(|| {
+        CalendarMutationError::Permanent("Resposta inválida ao atualizar evento.".into())
+    })?;
+    local_store::upsert_cached_event(app, &ev).map_err(CalendarMutationError::Permanent)?;
     Ok(ev)
+}
+
+/// Processa mutações pendentes (FIFO). Para em erro transitório; remove entradas com erro permanente.
+pub async fn flush_pending_mutations(app: &AppHandle) -> Result<u32, String> {
+    let mut done = 0u32;
+    loop {
+        let Some((row_id, json)) = local_store::pending_mutations_peek_first(app)? else {
+            break;
+        };
+        let op: QueuedCalendarMutation = match serde_json::from_str(&json) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("[agenda] fila offline: payload inválido, a remover: {e}");
+                local_store::pending_mutations_remove(app, row_id)?;
+                continue;
+            }
+        };
+
+        let result = match op {
+            QueuedCalendarMutation::Create(ref p) => {
+                create_primary_calendar_event_impl(app, p).await.map(|_| ())
+            }
+            QueuedCalendarMutation::Update(ref p) => {
+                update_calendar_event_impl(app, p).await.map(|_| ())
+            }
+            QueuedCalendarMutation::Delete(ref p) => delete_calendar_event_impl(app, p).await,
+        };
+
+        match result {
+            Ok(()) => {
+                local_store::pending_mutations_remove(app, row_id)?;
+                done += 1;
+            }
+            Err(CalendarMutationError::Transient(e)) => {
+                let _ = local_store::pending_mutations_set_last_error(app, row_id, Some(&e));
+                break;
+            }
+            Err(CalendarMutationError::Permanent(e)) => {
+                eprintln!("[agenda] fila offline: a descartar entrada (erro permanente): {e}");
+                local_store::pending_mutations_remove(app, row_id)?;
+            }
+        }
+    }
+    Ok(done)
 }
 
 pub fn sign_out_and_clear_cache(app: &AppHandle) -> Result<(), String> {
     delete_refresh_token(app)?;
     local_store::clear_calendar_events(app, PRIMARY)?;
+    local_store::pending_mutations_clear(app)?;
     Ok(())
 }

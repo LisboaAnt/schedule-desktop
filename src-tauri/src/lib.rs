@@ -310,11 +310,19 @@ pub struct CalendarState {
     /// `true` se `GOOGLE_OAUTH_CLIENT_ID` ou `google_oauth_client_id.txt` estiver definido.
     #[serde(default)]
     pub client_id_configured: bool,
+    /// Mutações à espera de rede / API (fila offline).
+    #[serde(default)]
+    pub pending_mutations_count: u32,
 }
 
 #[tauri::command]
 fn get_calendar_state(app: tauri::AppHandle) -> CalendarState {
     let connected = google_calendar::has_refresh_token(&app);
+    let pending_mutations_count = if local_store::is_ready() {
+        local_store::pending_mutations_len(&app).unwrap_or(0)
+    } else {
+        0
+    };
     CalendarState {
         source: if connected {
             "google".to_string()
@@ -324,6 +332,7 @@ fn get_calendar_state(app: tauri::AppHandle) -> CalendarState {
         connected,
         db_ready: local_store::is_ready(),
         client_id_configured: google_calendar::client_id_configured(&app),
+        pending_mutations_count,
     }
 }
 
@@ -341,6 +350,9 @@ async fn google_calendar_sign_in(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn google_calendar_sync(app: tauri::AppHandle) -> Result<u32, String> {
     let n = google_calendar::sync_primary_to_cache(&app).await?;
+    if let Err(e) = google_calendar::flush_pending_mutations(&app).await {
+        eprintln!("[agenda] fila offline após sync: {e}");
+    }
     Ok(n as u32)
 }
 
@@ -356,89 +368,78 @@ fn get_cached_calendar_events(
     local_store::list_cached_events(&app)
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateGoogleEventPayload {
-    pub summary: String,
-    pub all_day: bool,
-    pub start_iso: String,
-    pub end_iso: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub location: Option<String>,
-    #[serde(default)]
-    pub extensions: calendar_model::EventWriteExtensions,
-}
-
 #[tauri::command]
 async fn google_calendar_create_event(
     app: tauri::AppHandle,
-    payload: CreateGoogleEventPayload,
+    payload: calendar_model::CreateGoogleEventPayload,
 ) -> Result<calendar_model::CalendarEvent, String> {
-    google_calendar::create_primary_calendar_event(
-        &app,
-        payload.summary,
-        payload.all_day,
-        payload.start_iso,
-        payload.end_iso,
-        payload.description,
-        payload.location,
-        payload.extensions,
-    )
-    .await
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateGoogleEventPayload {
-    pub calendar_id: String,
-    pub event_id: String,
-    pub summary: String,
-    pub all_day: bool,
-    pub start_iso: String,
-    pub end_iso: String,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
-    pub location: Option<String>,
-    #[serde(default)]
-    pub extensions: calendar_model::EventWriteExtensions,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeleteGoogleEventPayload {
-    pub calendar_id: String,
-    pub event_id: String,
+    google_calendar::create_primary_calendar_event(&app, payload).await
 }
 
 #[tauri::command]
 async fn google_calendar_update_event(
     app: tauri::AppHandle,
-    payload: UpdateGoogleEventPayload,
+    payload: calendar_model::UpdateGoogleEventPayload,
 ) -> Result<calendar_model::CalendarEvent, String> {
-    google_calendar::update_calendar_event(
-        &app,
-        &payload.calendar_id,
-        &payload.event_id,
-        payload.summary,
-        payload.all_day,
-        payload.start_iso,
-        payload.end_iso,
-        payload.description,
-        payload.location,
-        payload.extensions,
-    )
-    .await
+    google_calendar::update_calendar_event(&app, payload).await
 }
 
 #[tauri::command]
 async fn google_calendar_delete_event(
     app: tauri::AppHandle,
-    payload: DeleteGoogleEventPayload,
+    payload: calendar_model::DeleteGoogleEventPayload,
 ) -> Result<(), String> {
-    google_calendar::delete_calendar_event(&app, &payload.calendar_id, &payload.event_id).await
+    google_calendar::delete_calendar_event(&app, payload).await
+}
+
+/// Processa só a fila offline (sem `events.list` / sync incremental).
+#[tauri::command]
+async fn google_calendar_flush_offline_queue(app: tauri::AppHandle) -> Result<u32, String> {
+    google_calendar::flush_pending_mutations(&app).await
+}
+
+/// Abre no explorador a pasta com SQLite e token OAuth em ficheiro (dados locais da app).
+#[tauri::command]
+fn open_app_local_data_folder(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("{e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy().as_ref(), Option::<&str>::None)
+        .map_err(|e| e.to_string())
+}
+
+/// Abre a pasta de configuração (`config.json`, estado da janela, opcionalmente `google_oauth_client_id.txt`).
+#[tauri::command]
+fn open_app_config_folder(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app.path().app_config_dir().map_err(|e| format!("{e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy().as_ref(), Option::<&str>::None)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove o ficheiro de estado da janela e centra a janela principal com o tamanho inicial (380×520).
+#[tauri::command]
+fn reset_saved_window_layout(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_window_state::AppHandleExt;
+    let cfg_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let state_path = cfg_dir.join(app.filename());
+    if state_path.is_file() {
+        fs::remove_file(&state_path).map_err(|e| e.to_string())?;
+    }
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Janela principal em falta.".to_string())?;
+    win
+        .set_size(tauri::LogicalSize::new(380.0, 520.0))
+        .map_err(|e| e.to_string())?;
+    win.center().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// No Windows: ancora atrás dos ícones do ambiente de trabalho, esconde a barra (CSS) e abre a pílula “voltar”.
@@ -490,6 +491,46 @@ async fn send_window_to_back(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn bring_window_to_front(app: tauri::AppHandle) -> Result<(), String> {
     bring_main_window_forward(&app)
+}
+
+#[tauri::command]
+fn window_minimize(app: tauri::AppHandle) -> Result<(), String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "Janela principal em falta.".to_string())?
+        .minimize()
+        .map_err(|e| e.to_string())
+}
+
+/// Pedido de fecho (respeita «fechar → bandeja» em `on_window_event`).
+#[tauri::command]
+fn window_close_main(app: tauri::AppHandle) -> Result<(), String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "Janela principal em falta.".to_string())?
+        .close()
+        .map_err(|e| e.to_string())
+}
+
+/// Maximiza ou restaura a janela (área útil do ecrã, não fullscreen exclusivo da API).
+#[tauri::command]
+fn window_toggle_maximized(app: tauri::AppHandle) -> Result<bool, String> {
+    let w = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Janela principal em falta.".to_string())?;
+    if w.is_maximized().map_err(|e| e.to_string())? {
+        w.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        w.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+fn window_is_maximized(app: tauri::AppHandle) -> Result<bool, String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "Janela principal em falta.".to_string())?
+        .is_maximized()
+        .map_err(|e| e.to_string())
 }
 
 /// Recoloca a pílula no canto do calendário após o layout (janela mantém o tamanho).
@@ -579,8 +620,16 @@ pub fn run() {
             google_calendar_create_event,
             google_calendar_update_event,
             google_calendar_delete_event,
+            google_calendar_flush_offline_queue,
+            open_app_local_data_folder,
+            open_app_config_folder,
+            reset_saved_window_layout,
             send_window_to_back,
             bring_window_to_front,
+            window_minimize,
+            window_close_main,
+            window_toggle_maximized,
+            window_is_maximized,
             reposition_restore_pill,
             restore_desktop_wallpaper_mode,
             autostart_set,

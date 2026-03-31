@@ -12,6 +12,13 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 4. **URIs de redirecionamento** autorizados: `http://127.0.0.1:17892/callback` (porta fixa definida em `src-tauri/src/google_calendar.rs`).
 5. Escopos na app: `https://www.googleapis.com/auth/calendar.events` (ler e criar/editar eventos). Se ligaste a conta com um escopo antigo (`…readonly`), volta a **Ligar conta Google** para consentir o novo.
 
+## Escopos e quotas (para utilizadores e contribuidores)
+
+- **Escopo em código**: constante `SCOPE` em `src-tauri/src/google_calendar.rs` — hoje é `https://www.googleapis.com/auth/calendar.events`. Permite listar, criar, alterar e apagar **eventos** do calendário; não cobre outros dados Google fora da Calendar API.
+- **Menor privilégio**: só pedir escopos estritamente necessários. Uma variante só leitura seria `https://www.googleapis.com/auth/calendar.events.readonly` (obrigaria novo consentimento se mudasses o produto).
+- **Quotas oficiais**: limites e custos em unidades de quota variam por método (`events.list`, `insert`, etc.). Consulta a documentação atual da Google: [Usage limits](https://developers.google.com/workspace/calendar/api/guides/quota) (URL sujeita a mudanças pelo Google).
+- **Como esta app reduz uso**: cache SQLite + sincronização incremental com `nextSyncToken`; sync a pedido e intervalo de auto-sync configurável; em respostas **429** (rate limit) a fila offline trata o erro como transitório e re-tenta após sincronizar.
+
 ## Fluxo recomendado (desktop)
 
 - **OAuth 2.0 com PKCE** + **authorization code** com redirect para **localhost**.

@@ -34,12 +34,13 @@ npm run build
 | [docs/CICLOS-PROXIMOS.md](docs/CICLOS-PROXIMOS.md) | Próximas fases (após UI) |
 | [docs/GOOGLE-CALENDAR-FASE2.md](docs/GOOGLE-CALENDAR-FASE2.md) | Guia OAuth / API (Fase 2) |
 | [claude.md](claude.md) | Contexto para IA e contribuidores |
+| [SECURITY.md](SECURITY.md) | Reporte responsável de vulnerabilidades |
 
 ## Estado atual (v0.1.0)
 
 - Janela sem decoração: **barra de arrastar** + vistas **Mês / Semana / Dia**; dados **demo** em JS até à Fase 2.
 - **Persistência**: `window-state` + `config.json` (`viewMode`, `theme`, `widgetOpacity`, `agendaView`, …).
-- **SQLite** local: ficheiro `agenda_cache.sqlite3` (schema de cache; ainda sem sync Google).
+- **SQLite** local: `agenda_cache.sqlite3` (cache de eventos, `sync_state`, fila offline de mutações).
 - **Windows**: modo fundo do ambiente de trabalho (WorkerW), pílula de restauro, bandeja.
 
 ## Licença

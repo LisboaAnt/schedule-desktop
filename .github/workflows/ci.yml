@@ -26,5 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast
+
       - name: Build Tauri (release)
         run: npm run build

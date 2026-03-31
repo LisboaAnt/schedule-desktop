@@ -76,6 +76,57 @@ impl Default for EventWriteExtensions {
     }
 }
 
+/// Payload IPC / fila offline — criar evento (calendário `primary`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateGoogleEventPayload {
+    pub summary: String,
+    pub all_day: bool,
+    pub start_iso: String,
+    pub end_iso: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub extensions: EventWriteExtensions,
+}
+
+/// Payload IPC / fila offline — atualizar evento.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateGoogleEventPayload {
+    pub calendar_id: String,
+    pub event_id: String,
+    pub summary: String,
+    pub all_day: bool,
+    pub start_iso: String,
+    pub end_iso: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub extensions: EventWriteExtensions,
+}
+
+/// Payload IPC / fila offline — apagar evento.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteGoogleEventPayload {
+    pub calendar_id: String,
+    pub event_id: String,
+}
+
+/// Uma operação guardada para envio quando a rede / API voltar a responder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum QueuedCalendarMutation {
+    Create(CreateGoogleEventPayload),
+    Update(UpdateGoogleEventPayload),
+    Delete(DeleteGoogleEventPayload),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEvent {
@@ -92,4 +143,31 @@ pub struct CalendarEvent {
     pub location: Option<String>,
     #[serde(default)]
     pub form: Option<CalendarEventForm>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queued_mutation_create_json_roundtrip() {
+        let q = QueuedCalendarMutation::Create(CreateGoogleEventPayload {
+            summary: "Teste".into(),
+            all_day: true,
+            start_iso: "2026-03-01".into(),
+            end_iso: "2026-03-02".into(),
+            description: Some("d".into()),
+            location: None,
+            extensions: EventWriteExtensions {
+                request_google_meet: true,
+                recurrence: "weekly".into(),
+                ..EventWriteExtensions::default()
+            },
+        });
+        let v1 = serde_json::to_value(&q).expect("serialize value");
+        let json = serde_json::to_string(&q).expect("serialize");
+        let back: QueuedCalendarMutation = serde_json::from_str(&json).expect("deserialize");
+        let v2 = serde_json::to_value(&back).expect("reserialize value");
+        assert_eq!(v1, v2);
+    }
 }

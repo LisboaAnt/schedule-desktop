@@ -17,10 +17,10 @@
   <body class="theme-dark view-widget">
     <div id="app" class="shell">
       <header class="titlebar">
-        <div class="titlebar-row-unified">
-          <div class="titlebar-drag" data-tauri-drag-region>
-            <span id="title-period" class="app-name" data-tauri-drag-region>—</span>
-            <span class="drag-hint" data-tauri-drag-region>Arrastar para mover</span>
+        <div class="titlebar-row-unified" data-tauri-drag-region>
+          <div class="titlebar-leading">
+            <span id="title-period" class="app-name">—</span>
+            <span class="drag-hint">Arrastar na barra para mover a janela</span>
           </div>
           <nav class="view-tabs" role="tablist" aria-label="Vista da agenda">
             <button type="button" id="btn-prev" class="btn-nav btn-nav--tabs" data-action="period-prev" aria-label="Período anterior">
@@ -45,14 +45,9 @@
               id="btn-send-back"
               class="btn-icon"
               title="Colocar atrás dos ícones do ambiente de trabalho (ícone pequeno para voltar)"
+              aria-label="Enviar para trás do ambiente de trabalho"
             >
               ⤓
-            </button>
-            <button type="button" id="btn-bring-front" class="btn-icon" title="Trazer esta janela à frente">
-              ⤒
-            </button>
-            <button type="button" id="btn-mode" class="btn-icon" title="Alternar widget / app">
-              ⛶
             </button>
             <button
               type="button"
@@ -71,6 +66,59 @@
               aria-label="Definições"
             >
               ⚙
+            </button>
+            <span class="titlebar-actions-sep" aria-hidden="true"></span>
+            <button
+              type="button"
+              id="btn-maximize-window"
+              class="btn-icon btn-maximize-toggle"
+              title="Janela em tela cheia (maximizar)"
+              aria-label="Maximizar ou restaurar janela"
+              aria-pressed="false"
+            >
+              <svg class="max-icon max-restore" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.25"
+                  stroke-linejoin="round"
+                  d="M8.5 5.5h3v3h-3zM4.5 3.5h3v3h-3z"
+                />
+              </svg>
+              <svg class="max-icon max-expand" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <rect
+                  x="3.25"
+                  y="3.25"
+                  width="7.5"
+                  height="7.5"
+                  rx="0.75"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.25"
+                />
+              </svg>
+            </button>
+            <button type="button" id="btn-minimize" class="btn-icon btn-titlebar-win" title="Minimizar" aria-label="Minimizar">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <rect x="1" y="5.25" width="10" height="1.5" rx="0.4" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              id="btn-close-main"
+              class="btn-icon btn-titlebar-win btn-titlebar-close"
+              title="Fechar"
+              aria-label="Fechar"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <path
+                  d="M2.5 2.5l7 7M9.5 2.5l-7 7"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.35"
+                  stroke-linecap="round"
+                />
+              </svg>
             </button>
           </div>
         </div>
@@ -95,79 +143,141 @@
         </p>
       </section>
 
-      <section class="settings-panel hidden" id="settings-panel">
-        <h3 class="settings-title">Aparência e janela</h3>
-        <label class="field">
-          <span>Tema</span>
-          <select id="select-theme">
-            <option value="dark">Escuro</option>
-            <option value="light">Claro</option>
-            <option value="system">Sistema</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Opacidade do widget</span>
-          <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" />
-        </label>
+      <section class="settings-panel hidden" id="settings-panel" aria-label="Definições">
+        <div class="settings-scroll">
+          <div class="settings-inner">
+            <header class="settings-page-head">
+              <h2 class="settings-page-title">Definições</h2>
+              <p class="settings-page-lead">
+                Tema, Google Calendar, arranque e ficheiros locais — tudo num só sítio.
+              </p>
+            </header>
 
-        <h3 class="settings-title settings-title-spaced">Arranque e bandeja</h3>
-        <label class="field field-checkbox-row">
-          <input type="checkbox" id="chk-start-windows" />
-          <span>Iniciar com o Windows</span>
-        </label>
-        <label class="field field-checkbox-row">
-          <input type="checkbox" id="chk-close-to-tray" />
-          <span>Ao fechar a janela, ocultar na bandeja (não sair)</span>
-        </label>
-        <p class="settings-info settings-info-compact">
-          Com «ocultar na bandeja», usa o ícone da bandeja → <strong>Sair</strong> para fechar a aplicação por completo.
-        </p>
+            <div class="settings-cards">
+              <article class="settings-card">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Aparência</h3>
+                  <p class="settings-card-desc">Tema do sistema, transparência e tamanho das células na grelha.</p>
+                </div>
+                <div class="settings-card-body">
+                  <label class="field settings-field">
+                    <span class="settings-label">Tema</span>
+                    <select id="select-theme" class="settings-input">
+                      <option value="dark">Escuro</option>
+                      <option value="light">Claro</option>
+                      <option value="system">Sistema</option>
+                    </select>
+                  </label>
+                  <label class="field settings-field">
+                    <span class="settings-label">Opacidade da janela</span>
+                    <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" class="settings-range" />
+                  </label>
+                  <label class="field settings-field">
+                    <span class="settings-label">Densidade da vista</span>
+                    <select id="select-view-layout" class="settings-input" title="Compacto = menos espaço; expandido = células maiores">
+                      <option value="widget">Compacto (widget)</option>
+                      <option value="app">Expandido</option>
+                    </select>
+                  </label>
+                </div>
+              </article>
 
-        <h3 class="settings-title settings-title-spaced">Conta e sincronização</h3>
-        <p class="settings-info" id="calendar-state-line">A carregar estado…</p>
-        <p class="settings-info settings-info-muted hidden" id="calendar-client-id-hint"></p>
-        <p class="settings-info settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
-        <div class="settings-actions" id="calendar-actions">
-          <button type="button" class="btn-secondary" id="btn-google-sign-in">Ligar conta Google</button>
-          <button type="button" class="btn-secondary btn-sync-primary" id="btn-google-sync">Sincronizar agora</button>
-          <button type="button" class="btn-secondary btn-secondary-danger" id="btn-google-disconnect">
-            Terminar sessão
-          </button>
+              <article class="settings-card">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Arranque e bandeja</h3>
+                  <p class="settings-card-desc">Início com o Windows e comportamento ao fechar.</p>
+                </div>
+                <div class="settings-card-body">
+                  <label class="field field-checkbox-row settings-field settings-field--row">
+                    <input type="checkbox" id="chk-start-windows" />
+                    <span class="settings-label settings-label--inline">Iniciar com o Windows</span>
+                  </label>
+                  <label class="field field-checkbox-row settings-field settings-field--row">
+                    <input type="checkbox" id="chk-close-to-tray" />
+                    <span class="settings-label settings-label--inline">Ao fechar, ocultar na bandeja (não sair)</span>
+                  </label>
+                  <p class="settings-callout settings-callout--subtle">
+                    Com «ocultar na bandeja», usa o ícone da bandeja → <strong>Sair</strong> para encerrar por completo.
+                  </p>
+                </div>
+              </article>
+
+              <article class="settings-card settings-card--wide">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Google Calendar</h3>
+                  <p class="settings-card-desc">Liga a conta, sincroniza eventos e gere a fila offline.</p>
+                </div>
+                <div class="settings-card-body">
+                  <p class="settings-status" id="calendar-state-line">A carregar estado…</p>
+                  <p class="settings-callout settings-callout--warn hidden" id="calendar-client-id-hint"></p>
+                  <p class="settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
+                  <div class="settings-actions settings-actions--grid" id="calendar-actions">
+                    <button type="button" class="btn-secondary" id="btn-google-sign-in">Ligar conta</button>
+                    <button type="button" class="btn-secondary btn-sync-primary" id="btn-google-sync">Sincronizar</button>
+                    <button type="button" class="btn-secondary hidden" id="btn-google-flush-queue" title="Envia alterações em fila sem descarregar o calendário">
+                      Fila offline
+                    </button>
+                    <button type="button" class="btn-secondary btn-secondary-danger" id="btn-google-disconnect">
+                      Terminar sessão
+                    </button>
+                  </div>
+                  <label class="field settings-field settings-field--tight">
+                    <span class="settings-label">Sincronização automática</span>
+                    <select id="select-auto-sync" class="settings-input" title="Pedidos à API Google só com sessão ligada">
+                      <option value="0">Desligada</option>
+                      <option value="5">A cada 5 minutos</option>
+                      <option value="15">A cada 15 minutos</option>
+                      <option value="30">A cada 30 minutos</option>
+                      <option value="60">A cada 60 minutos</option>
+                    </select>
+                  </label>
+                  <p class="settings-callout settings-callout--subtle">
+                    Ao voltares à janela, a agenda pode sincronizar no máximo de 90 em 90 segundos (com sessão Google ativa).
+                  </p>
+                </div>
+              </article>
+
+              <article class="settings-card create-google-event-block hidden" id="create-google-event-block">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Novo evento</h3>
+                  <p class="settings-card-desc">Editor com título, datas, local e convidados (estilo Google Calendar).</p>
+                </div>
+                <div class="settings-card-body">
+                  <button type="button" class="btn-secondary btn-sync-primary btn-secondary--block" id="btn-open-gc-editor">
+                    Abrir editor de evento
+                  </button>
+                </div>
+              </article>
+
+              <article class="settings-card settings-card--wide">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Dados no disco</h3>
+                  <p class="settings-card-desc">
+                    <strong>Dados:</strong> SQLite e fila offline. <strong>Config:</strong> preferências, janela e OAuth opcional em ficheiro.
+                  </p>
+                </div>
+                <div class="settings-card-body">
+                  <div class="settings-actions settings-actions--grid settings-actions--triple">
+                    <button type="button" class="btn-secondary" id="btn-open-data-folder">Pasta de dados</button>
+                    <button type="button" class="btn-secondary" id="btn-open-config-folder">Pasta de configuração</button>
+                    <button type="button" class="btn-secondary" id="btn-reset-window-layout">Repor janela</button>
+                  </div>
+                </div>
+              </article>
+
+              <article class="settings-card settings-card--wide settings-card--muted">
+                <div class="settings-card-head">
+                  <h3 class="settings-card-title">Modo «atrás das janelas»</h3>
+                  <p class="settings-card-desc">
+                    Usa <strong>⤓</strong> na barra ou o menu da <strong>bandeja</strong> para colocar a agenda atrás das outras aplicações.
+                    Para voltar: bandeja → Mostrar agenda, ou <strong>Alt+Tab</strong>.
+                  </p>
+                </div>
+                <p class="settings-foot">A posição e o tamanho da janela guardam-se automaticamente ao fechar.</p>
+              </article>
+            </div>
+          </div>
         </div>
-
-        <label class="field field-spaced-top">
-          <span>Sincronização automática</span>
-          <select id="select-auto-sync" title="Pedidos à API Google só com sessão ligada">
-            <option value="0">Desligada</option>
-            <option value="5">A cada 5 minutos</option>
-            <option value="15">A cada 15 minutos</option>
-            <option value="30">A cada 30 minutos</option>
-            <option value="60">A cada 60 minutos</option>
-          </select>
-        </label>
-        <p class="settings-info settings-info-compact">
-          Ao voltares à janela, a agenda sincroniza no máximo de 90 em 90 segundos (se estiveres ligado ao Google).
-        </p>
-
-        <div class="create-google-event-block hidden" id="create-google-event-block">
-          <h3 class="settings-title settings-title-spaced">Novo evento</h3>
-          <p class="settings-info settings-info-compact">
-            Abre o editor ao estilo Google Calendar (título, datas, local, descrição).
-          </p>
-          <button type="button" class="btn-secondary btn-sync-primary" id="btn-open-gc-editor">
-            Novo evento no Google Calendar
-          </button>
-        </div>
-
-        <h3 class="settings-title settings-title-spaced">Ficar atrás de outras janelas</h3>
-        <p class="settings-info">
-          Usa <strong>⤓</strong> na barra (ou o ícone na <strong>bandeja</strong>) para mandar a janela para
-          <strong>trás das outras apps</strong>. Para voltar: ícone na bandeja ou <strong>⤒</strong> (se a janela ainda aparecer, p.ex. Alt+Tab).
-        </p>
-
-        <p class="settings-foot">
-          Posição e tamanho da janela são guardados ao fechar.
-        </p>
       </section>
 
       <div id="event-editor-overlay" class="gc-editor-overlay hidden" aria-hidden="true">

@@ -12,7 +12,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Estrutura de pastas acordada (`src-tauri/`, `src/` ou `ui/`, `docs/`).
 - [x] **`.gitignore`**: `node_modules/`, `target/`, `.env`, credenciais, builds locais.
 - [x] **CI** (GitHub Actions ou similar): build Windows em release (`.github/workflows/ci.yml`).
-- [ ] `cargo clippy` / testes Rust no CI (opcional além do build).
+- [x] `cargo clippy` / testes Rust no CI (opcional além do build).
 - [x] Documentar versões mínimas: **Rust**, **Node**, **WebView2** — ver [COMO-RODAR.md](./COMO-RODAR.md).
 - [x] Primeiro **`tauri build`** gerando instalador/portable no Windows (MSI + NSIS em `src-tauri/target/release/bundle/`).
 
@@ -27,7 +27,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Opções de janela para widget: **sem decoração**; redimensionável; região de arrastar.
 - [x] Persistência de preferências em arquivo local (JSON via `app_config_dir`).
 - [x] Esqueleto de **tema**: variáveis CSS + claro / escuro / sistema.
-- [x] Painel de **definições** (tema, opacidade); falta: abrir pasta de dados, reset layout.
+- [x] Painel de **definições** (tema, opacidade); abrir pasta de dados + repor layout da janela.
 
 ---
 
@@ -44,22 +44,22 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] **Atualizar / apagar** evento (`events.patch`, `events.delete`) + cache; UI em folha ao clicar na vista Semana/Dia.
 - [x] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API) — leitura/listagem; escrita em falta.
 - [x] **SQLite**: cache de eventos + `sync_state` com `nextSyncToken` / incremental; `updatedMin` não usado.
-- [ ] **Fila offline**: mutações enfileiradas quando sem rede; envio com retry e tratamento de erro.
-- [ ] UI: lista/semana/mês mínimo viável + formulário de evento (título, início/fim, calendário).
-- [ ] Documentar **escopos** e limites de quota para utilizadores/contribuidores.
+- [x] **Fila offline**: mutações enfileiradas quando sem rede; envio ao sincronizar / botão dedicado; erros permanentes descartados com log.
+- [x] UI: lista/semana/mês mínimo viável + formulário de evento (título, início/fim, calendário).
+- [x] Documentar **escopos** e limites de quota para utilizadores/contribuidores (ver [GOOGLE-CALENDAR-FASE2.md](./GOOGLE-CALENDAR-FASE2.md)).
 
 ---
 
 ## Fase 3 — Polimento e leveza
 
 - [x] **Ícone na bandeja** (básico): menu / clique para trazer a janela à frente (completar: ocultar, sair, etc.).
-- [ ] Intervalo de **sync automático** configurável + botão “sincronizar agora”.
-- [ ] Sync ao **focar** a janela (opcional, com throttle).
+- [x] Intervalo de **sync automático** configurável + botão “sincronizar agora”.
+- [x] Sync ao **focar** a janela (com throttle ~90 s).
 - [ ] **Lazy loading** de meses/dias na UI; evitar renderizar milhares de nós de uma vez.
 - [ ] Revisão de **dependências** (remover o que não for essencial).
-- [ ] **Iniciar com o Windows**: implementar e documentar (Startup ou `Run`).
-- [ ] **Ícone na bandeja**: mostrar/ocultar widget, sair de verdade (além do “trazer à frente”).
-- [ ] Comportamento opcional: **fechar = minimizar** para bandeja.
+- [x] **Iniciar com o Windows**: `tauri-plugin-autostart` + opção em Definições.
+- [x] **Ícone na bandeja**: mostrar, ocultar, sair (menu contextual).
+- [x] Comportamento opcional: **fechar = minimizar** para bandeja (`close_to_tray`).
 - [ ] Opções avançadas de personalização: **opacidade**, densidade, fonte, cores por token de tema.
 - [ ] Medição informal de **RAM em idle** (notas no README ou doc de release).
 
@@ -73,7 +73,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [ ] **CHANGELOG.md** ou releases com notas por versão.
 - [ ] Pipeline de **release**: artefatos `.msi`/`.exe` (ou nsis) anexados ao GitHub Releases.
 - [ ] Instruções para **assinatura** de binários (quando houver certificado).
-- [ ] Política de segurança (**SECURITY.md**) e canal para reportar vulnerabilidades.
+- [x] Política de segurança (**SECURITY.md**) e canal para reportar vulnerabilidades.
 
 ---
 
