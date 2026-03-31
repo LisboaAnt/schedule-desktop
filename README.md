@@ -28,9 +28,9 @@ Os instaladores (`.msi` e `.exe` NSIS) saem em `src-tauri/target/release/bundle/
 
 ## Descarregar do GitHub (releases)
 
-Quando o repositório está no GitHub e as **Actions** têm permissão de escrita, ao publicares uma **tag** `v0.1.0` (etc.) o workflow **Release (Windows)** gera os instaladores e anexa-os à página **Releases**.
+O workflow **Release (Windows)** é **manual**: em **Actions** → **Run workflow** (não corre sozinho ao fazeres push de tags). Gera `.msi` / `.exe` e anexa à página **Releases**.
 
-Passo a passo: **[docs/RELEASE.md](docs/RELEASE.md)** (permissões, alinhar `tauri.conf.json` / `Cargo.toml`, `git tag` + `git push`).
+Passo a passo: **[docs/RELEASE.md](docs/RELEASE.md)**.
 
 ## Documentação
 

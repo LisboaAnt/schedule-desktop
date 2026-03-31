@@ -6,7 +6,7 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 
 ### Adicionado
 
-- **GitHub Releases**: workflow `release-windows.yml` (tag `v*`) com [tauri-action](https://github.com/tauri-apps/tauri-action); anexa `.msi` e `.exe` NSIS. Instruções em [docs/RELEASE.md](docs/RELEASE.md).
+- **GitHub Releases**: workflow `release-windows.yml` só com **disparo manual** (`workflow_dispatch`); CI em PR + manual (sem CI em cada push a `master`). [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Alterado
 

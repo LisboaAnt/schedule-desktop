@@ -1,12 +1,10 @@
 # Gera instaladores Windows (.msi WiX + .exe NSIS) e publica na aba Releases do GitHub.
-# Requisito: em Settings → Actions → General → Workflow permissions → "Read and write".
+# Só corre quando disparas manualmente (Actions → Release (Windows) → Run workflow).
+# Requisito: Settings → Actions → General → Workflow permissions → "Read and write".
 
 name: Release (Windows)
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:

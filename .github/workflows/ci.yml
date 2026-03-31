@@ -1,10 +1,12 @@
+# Testes + build: em pull requests para main/master, ou manualmente (Run workflow).
+# Não corre em cada push direto a main/master — evita duplicar com o Release e reduz minutos.
+
 name: CI
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   build-windows:

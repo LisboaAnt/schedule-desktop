@@ -19,28 +19,25 @@ Os ficheiros aparecem como *assets* da release. Também ficam como **artefatos d
 
 Sem isto, o `GITHUB_TOKEN` não consegue criar a release e verás erro do tipo *Resource not accessible*.
 
-## Passos para lançar uma versão
+## Passos para lançar uma versão (sempre manual)
+
+O workflow **não** corre ao fazeres `git push` de tags — só quando inicias tu na UI do GitHub.
 
 1. **Alinhar versões** (devem coincidir):
    - `src-tauri/tauri.conf.json` → campo `"version"`
    - `src-tauri/Cargo.toml` → `version = "…"`
 
-2. **Commit** dessas alterações na branch principal (`main` / `master`).
+2. **Commit** e **push** para `main` / `master` (o código que queres embalar).
 
-3. **Criar e enviar a tag** (o nome deve bater com a versão, com prefixo `v`):
+3. No GitHub: **Actions** → **Release (Windows)** → **Run workflow** → escolhe a branch (normalmente `master`) → **Run workflow**.
 
-   ```powershell
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
+4. O *tauri-action* usa a versão dos ficheiros acima, cria/atualiza a release **Agenda v…** (ex.: `v0.1.0-beta.1`) e anexa `.msi` / `.exe`.
 
-   O workflow corre ao receber o `push` da tag `v*`.
+5. Opcional: no PC, podes criar a mesma tag Git só para marcar o commit (`git tag v0.1.0-beta.1` + `git push origin v0.1.0-beta.1`) — **não dispara** o workflow; é só organização do histórico.
 
-4. Em **Releases** no GitHub, confirma a release **Agenda v…** e os ficheiros `.msi` / `.exe`.
+## Porque não é automático
 
-## Disparo manual (sem nova tag)
-
-Na aba **Actions** → **Release (Windows)** → **Run workflow**: útil para testar o pipeline; o *tauri-action* pode criar/atualizar release conforme a versão no `tauri.conf.json`. Para releases estáveis, prefere o fluxo com **tag** acima.
+Assim evitas builds de release em cada tag acidental e podes separar: primeiro merges na branch principal, depois decides **quando** publicar instaladores.
 
 ## Assinatura de código (opcional)
 
