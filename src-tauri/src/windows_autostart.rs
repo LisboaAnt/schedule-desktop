@@ -35,6 +35,7 @@ pub fn rewrite_run_value_with_quoted_exe(app: &AppHandle) -> Result<(), String> 
 }
 
 /// Se já existe entrada de autostart para esta app, corrige aspas (útil após updates ou registo antigo).
+#[allow(dead_code)]
 pub fn fix_if_autostart_entry_exists(app: &AppHandle) {
     let name = app.package_info().name.clone();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -45,4 +46,15 @@ pub fn fix_if_autostart_entry_exists(app: &AppHandle) {
         return;
     }
     let _ = rewrite_run_value_with_quoted_exe(app);
+}
+
+/// Remove a entrada de autostart desta app no registo do Windows (se existir).
+pub fn remove_run_value(app: &AppHandle) -> Result<(), String> {
+    let name = app.package_info().name.clone();
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run = hkcu
+        .open_subkey_with_flags(RUN_SUBKEY, KEY_SET_VALUE)
+        .map_err(|e| format!("autostart Run: {e}"))?;
+    let _ = run.delete_value(&name);
+    Ok(())
 }

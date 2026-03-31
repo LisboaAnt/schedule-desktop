@@ -1,11 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, RunEvent, Runtime, WebviewWindow,
+    AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize, RunEvent, Runtime,
+    WebviewWindow,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -80,6 +82,17 @@ fn default_auto_sync_minutes() -> u32 {
     0
 }
 
+fn effective_auto_sync_minutes(cfg: &AppConfig) -> u32 {
+    if cfg.auto_sync_minutes > 0 {
+        return cfg.auto_sync_minutes;
+    }
+    // Mesmo sem auto-sync configurado, mantém atualização periódica no modo wallpaper.
+    if cfg.desktop_behind_icons {
+        return 15;
+    }
+    0
+}
+
 fn default_opacity() -> f64 {
     1.0
 }
@@ -135,37 +148,108 @@ fn write_config_file(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), S
     Ok(())
 }
 
-fn undo_desktop_behind_if_needed(app: &tauri::AppHandle) {
+fn set_desktop_behind_flag(app: &tauri::AppHandle, enabled: bool) {
     let Ok(mut cfg) = read_config_file(app) else {
         return;
     };
-    if !cfg.desktop_behind_icons {
+    if cfg.desktop_behind_icons == enabled {
         return;
     }
-    cfg.desktop_behind_icons = false;
-    #[cfg(windows)]
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = windows_desktop::set_behind_icons(&win, false, true, true);
-        clamp_webview_outer_to_work_area(&win);
-    }
+    cfg.desktop_behind_icons = enabled;
     let _ = write_config_file(app, &cfg);
 }
 
-/// Ao arrancar: desfazer modo “atrás dos ícones”, fechar pílula de restauro e limpar CSS.
-fn undo_desktop_wallpaper_on_launch(app: &tauri::AppHandle) {
+fn start_background_google_sync_worker(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut last_run: Option<Instant> = None;
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+
+            let cfg = read_config_file(&handle).unwrap_or_default();
+            let minutes = effective_auto_sync_minutes(&cfg);
+            if minutes == 0 || !google_calendar::has_refresh_token(&handle) {
+                last_run = None;
+                continue;
+            }
+
+            let due_secs = (minutes as u64).saturating_mul(60);
+            if let Some(t) = last_run {
+                if t.elapsed() < Duration::from_secs(due_secs) {
+                    continue;
+                }
+            }
+
+            match google_calendar::sync_primary_to_cache(&handle).await {
+                Ok(n) => {
+                    if let Err(e) = google_calendar::flush_pending_mutations(&handle).await {
+                        eprintln!("[agenda] background flush fila offline: {e}");
+                    }
+                    let _ = handle.emit("calendar://background-sync", n as u32);
+                }
+                Err(e) => {
+                    eprintln!("[agenda] background sync Google: {e}");
+                }
+            }
+            last_run = Some(Instant::now());
+        }
+    });
+}
+
+/// Ao arrancar: restaura o estado persistido do modo «atrás dos ícones».
+fn apply_desktop_wallpaper_state_on_launch(app: &tauri::AppHandle) {
     #[cfg(windows)]
     {
-        DESKTOP_WALLPAPER_ACTIVE.store(false, Ordering::SeqCst);
-        if let Some(pill) = app.get_webview_window("restore-pill") {
-            let _ = pill.close();
-        }
+        let cfg = read_config_file(app).unwrap_or_default();
         if let Some(main) = app.get_webview_window("main") {
-            let _ = windows_desktop::set_behind_icons(&main, false, true, true);
-            clamp_webview_outer_to_work_area(&main);
-            let _ = main.eval(JS_WALLPAPER_LEAVE);
+            if cfg.desktop_behind_icons {
+                DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
+                let _ = main.eval(JS_WALLPAPER_ENTER);
+                let _ = windows_desktop::set_behind_icons(
+                    &main,
+                    true,
+                    cfg.window_rounded_corners,
+                    cfg.window_show_border,
+                );
+                if let Some(p) = app.get_webview_window("restore-pill") {
+                    let _ = p.show();
+                } else {
+                    let _ = WebviewWindowBuilder::new(
+                        app,
+                        "restore-pill",
+                        WebviewUrl::App("restore-pill.html".into()),
+                    )
+                    .title("Agenda")
+                    .inner_size(RESTORE_PILL_INNER_LOGICAL, RESTORE_PILL_INNER_LOGICAL)
+                    .min_inner_size(RESTORE_PILL_INNER_LOGICAL, RESTORE_PILL_INNER_LOGICAL)
+                    .max_inner_size(RESTORE_PILL_INNER_LOGICAL, RESTORE_PILL_INNER_LOGICAL)
+                    .decorations(false)
+                    .skip_taskbar(true)
+                    .resizable(false)
+                    .transparent(true)
+                    .shadow(false)
+                    .visible(true)
+                    .owner(&main)
+                    .map_err(|e| e.to_string())
+                    .and_then(|b| b.build().map_err(|e| e.to_string()));
+                }
+                let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+            } else {
+                DESKTOP_WALLPAPER_ACTIVE.store(false, Ordering::SeqCst);
+                if let Some(pill) = app.get_webview_window("restore-pill") {
+                    let _ = pill.close();
+                }
+                let _ = windows_desktop::set_behind_icons(
+                    &main,
+                    false,
+                    cfg.window_rounded_corners,
+                    cfg.window_show_border,
+                );
+                clamp_webview_outer_to_work_area(&main);
+                let _ = main.eval(JS_WALLPAPER_LEAVE);
+            }
         }
     }
-    undo_desktop_behind_if_needed(app);
 }
 
 /// Mesma heurística que `tauri-plugin-window-state`: algum canto do retângulo da janela está dentro do ecrã?
@@ -329,8 +413,9 @@ fn position_restore_pill<R: Runtime>(
 }
 
 #[cfg(windows)]
-fn restore_desktop_wallpaper_mode_internal<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+fn restore_desktop_wallpaper_mode_internal(app: &tauri::AppHandle) -> Result<(), String> {
     DESKTOP_WALLPAPER_ACTIVE.store(false, Ordering::SeqCst);
+    set_desktop_behind_flag(app, false);
     if let Some(pill) = app.get_webview_window("restore-pill") {
         let _ = pill.close();
     }
@@ -347,7 +432,7 @@ fn restore_desktop_wallpaper_mode_internal<R: Runtime>(app: &AppHandle<R>) -> Re
     Ok(())
 }
 
-fn bring_main_window_forward<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+fn bring_main_window_forward(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(windows)]
     if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
         return restore_desktop_wallpaper_mode_internal(app);
@@ -364,7 +449,7 @@ fn bring_main_window_forward<R: Runtime>(app: &AppHandle<R>) -> Result<(), Strin
 }
 
 #[cfg_attr(windows, allow(dead_code))]
-fn send_main_window_back<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+fn send_main_window_back(app: &tauri::AppHandle) -> Result<(), String> {
     let w = app
         .get_webview_window("main")
         .ok_or_else(|| "Janela principal em falta.".to_string())?;
@@ -446,6 +531,17 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[tauri::command]
 async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
+    #[cfg(all(windows, debug_assertions))]
+    {
+        if enabled {
+            let _ = app.autolaunch().disable();
+            let _ = windows_autostart::remove_run_value(&app);
+            return Err(
+                "Autostart em modo desenvolvimento abre terminais/console. Usa o .exe de Release/instalado para ativar «Iniciar com o Windows»."
+                    .to_string(),
+            );
+        }
+    }
     let m = app.autolaunch();
     if enabled {
         m.enable().map_err(|e| e.to_string())?;
@@ -656,6 +752,7 @@ async fn send_window_to_back(
         let border = chrome.window_show_border.unwrap_or(cfg.window_show_border);
         windows_desktop::set_behind_icons(&main, true, rounded, border)?;
         DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
+        set_desktop_behind_flag(&app, true);
 
         if let Some(p) = app.get_webview_window("restore-pill") {
             p.show().map_err(|e| e.to_string())?;
@@ -834,15 +931,18 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            undo_desktop_wallpaper_on_launch(app.handle());
-            #[cfg(windows)]
+            apply_desktop_wallpaper_state_on_launch(app.handle());
+            #[cfg(all(windows, not(debug_assertions)))]
             windows_autostart::fix_if_autostart_entry_exists(app.handle());
+            #[cfg(all(windows, debug_assertions))]
+            let _ = windows_autostart::remove_run_value(app.handle());
             if let Err(e) = local_store::init(app.handle()) {
                 eprintln!("[agenda] base local (SQLite): {e}");
             }
             if let Err(e) = setup_tray(app.handle()) {
                 eprintln!("[agenda] bandeja do sistema: {e}");
             }
+            start_background_google_sync_worker(app.handle());
             let handle = app.handle().clone();
             if let Err(e) = handle.deep_link().register_all() {
                 eprintln!("[agenda] deep-link register_all: {e}");

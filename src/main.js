@@ -10,6 +10,7 @@ import {
 } from "./agenda.js";
 
 const { invoke } = window.__TAURI__.core;
+const tauriEvent = window.__TAURI__?.event;
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -1323,6 +1324,20 @@ function showPanel(which) {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (tauriEvent?.listen) {
+    tauriEvent.listen("calendar://background-sync", async () => {
+      if (!isGoogleCalendarActive()) return;
+      try {
+        const events = await invoke("get_cached_calendar_events");
+        setRemoteTasksByIso(eventsToByIso(events));
+        renderAll();
+        await bumpCalendarHintsFromBackend();
+      } catch (_) {
+        /* ignorar */
+      }
+    });
+  }
+
   document.querySelectorAll("[data-action='period-prev']").forEach((el) => {
     el.addEventListener("click", () => navPrev());
   });
