@@ -1,0 +1,60 @@
+# Gera instaladores Windows (.msi WiX + .exe NSIS) e publica na aba Releases do GitHub.
+# Requisito: em Settings → Actions → General → Workflow permissions → "Read and write".
+
+name: Release (Windows)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and upload to GitHub Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Agenda v__VERSION__
+          releaseBody: |
+            **Windows x64** — descarrega o `.msi` ou o `.exe` (instalador NSIS).
+
+            - **MSI**: instalação típica empresarial / silenciosa possível.
+            - **Setup .exe**: assistente NSIS.
+
+            Requisito: **WebView2** (normal no Windows 11; no 10, instalar [Evergreen](https://developer.microsoft.com/microsoft-edge/webview2/) se pedido).
+
+            Builds não assinados: o SmartScreen pode mostrar aviso — «Mais informações» → «Executar na mesma».
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: false
+          uploadWorkflowArtifacts: true
+          args: --verbose

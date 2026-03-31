@@ -24,6 +24,14 @@ Build de release:
 npm run build
 ```
 
+Os instaladores (`.msi` e `.exe` NSIS) saem em `src-tauri/target/release/bundle/`.
+
+## Descarregar do GitHub (releases)
+
+Quando o repositório está no GitHub e as **Actions** têm permissão de escrita, ao publicares uma **tag** `v0.1.0` (etc.) o workflow **Release (Windows)** gera os instaladores e anexa-os à página **Releases**.
+
+Passo a passo: **[docs/RELEASE.md](docs/RELEASE.md)** (permissões, alinhar `tauri.conf.json` / `Cargo.toml`, `git tag` + `git push`).
+
 ## Documentação
 
 | Ficheiro | Conteúdo |
@@ -33,7 +41,9 @@ npm run build
 | [docs/TAREFAS-POR-CICLO.md](docs/TAREFAS-POR-CICLO.md) | Checklist |
 | [docs/CICLOS-PROXIMOS.md](docs/CICLOS-PROXIMOS.md) | Próximas fases (após UI) |
 | [docs/MULTI-MONITOR.md](docs/MULTI-MONITOR.md) | Vários ecrãs e estado da janela |
+| [docs/DEPENDENCIAS.md](docs/DEPENDENCIAS.md) | Auditoria de crates / npm |
 | [CHANGELOG.md](CHANGELOG.md) | Alterações por versão |
+| [docs/RELEASE.md](docs/RELEASE.md) | Publicar instaladores no GitHub Releases |
 | [docs/GOOGLE-CALENDAR-FASE2.md](docs/GOOGLE-CALENDAR-FASE2.md) | Guia OAuth / API (Fase 2) |
 | [claude.md](claude.md) | Contexto para IA e contribuidores |
 | [SECURITY.md](SECURITY.md) | Reporte responsável de vulnerabilidades |

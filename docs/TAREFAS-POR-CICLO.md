@@ -42,7 +42,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Cliente Calendar API v3 no **Rust**: `events.list` por intervalo + **sync incremental** com `syncToken` (calendário `primary`).
 - [x] **Criar** evento no calendário `primary` (`events.insert`) + entrada na cache local.
 - [x] **Atualizar / apagar** evento (`events.patch`, `events.delete`) + cache; UI em folha ao clicar na vista Semana/Dia.
-- [x] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API) — leitura/listagem; escrita em falta.
+- [x] **Modelo unificado** de evento (UI ↔ Rust ↔ JSON API), CRUD + cache + fila offline.
 - [x] **SQLite**: cache de eventos + `sync_state` com `nextSyncToken` / incremental; `updatedMin` não usado.
 - [x] **Fila offline**: mutações enfileiradas quando sem rede; envio ao sincronizar / botão dedicado; erros permanentes descartados com log.
 - [x] UI: lista/semana/mês mínimo viável + formulário de evento (título, início/fim, calendário).
@@ -56,7 +56,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] Intervalo de **sync automático** configurável + botão “sincronizar agora”.
 - [x] Sync ao **focar** a janela (com throttle ~90 s).
 - [x] **Limitação de lista** na UI (semana / dia): máx. cartões por coluna e por dia + aviso «+N mais»; ordenação unificada com a vista mês (lazy loading virtual não implementado).
-- [ ] Revisão de **dependências** (remover o que não for essencial).
+- [x] Revisão de **dependências**: inventário em [DEPENDENCIAS.md](./DEPENDENCIAS.md); nada removível sem reescrever features; npm mínimo.
 - [x] **Iniciar com o Windows**: `tauri-plugin-autostart` + opção em Definições.
 - [x] **Ícone na bandeja**: mostrar, ocultar, sair (menu contextual).
 - [x] Comportamento opcional: **fechar = minimizar** para bandeja (`close_to_tray`).
@@ -72,7 +72,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] **CODE_OF_CONDUCT.md** (Pacto de Contribuinte 2.1, PT).
 - [x] Templates de **issue** (bug, feature) e **pull request** (`.github/ISSUE_TEMPLATE`, `pull_request_template.md`).
 - [x] **CHANGELOG.md** (secção *Unreleased* + evoluir por release).
-- [ ] Pipeline de **release**: artefatos `.msi`/`.exe` (ou nsis) anexados ao GitHub Releases.
+- [x] Pipeline de **release**: workflow [`.github/workflows/release-windows.yml`](../.github/workflows/release-windows.yml) + guia [RELEASE.md](./RELEASE.md) (MSI + NSIS na aba Releases).
 - [ ] Instruções para **assinatura** de binários (quando houver certificado).
 - [x] Política de segurança (**SECURITY.md**) e canal para reportar vulnerabilidades.
 
