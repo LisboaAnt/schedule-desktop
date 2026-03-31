@@ -44,3 +44,12 @@ jobs:
 
       - name: Build Tauri (release, sem instaladores)
         run: npm run build:ci
+
+      # Descarregar: Actions → run concluído → Artifacts → agenda-windows-x64 (zip com o .exe).
+      - name: Upload .exe para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: agenda-windows-x64
+          path: src-tauri/target/release/calendario-app.exe
+          if-no-files-found: error
+          retention-days: 30
