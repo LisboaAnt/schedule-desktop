@@ -1,9 +1,9 @@
-//! OAuth 2.0 Google (PKCE + callback loopback localhost) e Calendar API v3 (cache SQLite).
+//! OAuth 2.0 Google (PKCE + callback loopback 127.0.0.1) e Calendar API v3 (cache SQLite).
 //! Client ID (primeiro que existir): constante [`EMBEDDED_GOOGLE_OAUTH_CLIENT_ID`] (se preenchida),
 //! depois **compile time** `GOOGLE_OAUTH_CLIENT_ID` no `cargo tauri build`, depois env em runtime,
 //! depois ficheiro `google_oauth_client_id.txt` em `app_config_dir`. **Não é obrigatório usar `.env`.**
 //! Fluxo recomendado para distribuição da app desktop: credencial OAuth **Desktop** (sem `client_secret`),
-//! mantendo PKCE obrigatório. O callback é local (`http://localhost:<porta>/oauth2callback`).
+//! mantendo PKCE obrigatório. O callback é local (`http://127.0.0.1:<porta>/oauth2callback`).
 
 use std::fs;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ use base64::Engine as _;
 use chrono::{DateTime, Datelike, Months, NaiveDate, Utc, Weekday};
 use keyring::Entry;
 use rand::Rng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use urlencoding::encode as urlenc;
 use sha2::{Digest, Sha256};
@@ -36,7 +36,6 @@ const KEYRING_USER_REFRESH: &str = "google_oauth_refresh_token";
 /// Ficheiro na pasta de dados local (ao lado do SQLite). O keyring no Windows em dev falha por vezes; o ficheiro garante persistência.
 const REFRESH_TOKEN_FILENAME: &str = "google_oauth_refresh_token";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// Leitura + criação/edição de eventos. Após mudar o escopo, volta a **Ligar conta Google**.
 const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 const PRIMARY: &str = "primary";
@@ -52,13 +51,34 @@ const OAUTH_CALLBACK_WAIT_SECS: u64 = 600;
 /// Deixa vazio `""` se usares só variável na build ou ficheiro na pasta de configuração.
 const EMBEDDED_GOOGLE_OAUTH_CLIENT_ID: &str =
     "996263499952-5tdh2d08f0hril3o78bqt5dvg06pop7o.apps.googleusercontent.com";
+/// Endpoint servidor que faz token exchange/refresh com client_secret protegido.
+const OAUTH_TOKEN_BRIDGE_DEFAULT: &str = "https://www.alemsys.digital/api/auth/google/token";
 
 #[derive(Debug, Deserialize)]
 struct TokenJson {
+    #[serde(alias = "accessToken")]
     access_token: String,
+    #[serde(alias = "refreshToken")]
     refresh_token: Option<String>,
     #[allow(dead_code)]
+    #[serde(alias = "expiresIn")]
     expires_in: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeAuthCodeRequest<'a> {
+    grant_type: &'a str,
+    code: &'a str,
+    code_verifier: &'a str,
+    redirect_uri: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BridgeRefreshRequest<'a> {
+    grant_type: &'a str,
+    refresh_token: &'a str,
 }
 
 fn oauth_client_id_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -106,6 +126,22 @@ pub fn resolve_client_id(app: &AppHandle) -> Result<String, String> {
 
 pub fn client_id_configured(app: &AppHandle) -> bool {
     resolve_client_id(app).is_ok()
+}
+
+fn resolve_oauth_token_bridge_url() -> String {
+    if let Ok(v) = std::env::var("GOOGLE_OAUTH_TOKEN_BRIDGE_URL") {
+        let t = v.trim().to_string();
+        if !t.is_empty() {
+            return t;
+        }
+    }
+    if let Some(v) = option_env!("GOOGLE_OAUTH_TOKEN_BRIDGE_URL") {
+        let t = v.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    OAUTH_TOKEN_BRIDGE_DEFAULT.to_string()
 }
 
 fn keyring_entry() -> Result<Entry, String> {
@@ -237,7 +273,7 @@ fn wait_for_oauth_code_loopback(listener: &TcpListener, expected_state: &str) ->
                     .split_whitespace()
                     .nth(1)
                     .unwrap_or("/");
-                let callback_url = format!("http://localhost{path}");
+                let callback_url = format!("http://127.0.0.1{path}");
                 let parsed = url::Url::parse(&callback_url)
                     .map_err(|e| format!("OAuth: callback inválido: {e}"))?;
                 let mut oauth_error: Option<String> = None;
@@ -305,7 +341,7 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
         .local_addr()
         .map_err(|e| format!("OAuth: local_addr callback: {e}"))?
         .port();
-    let redirect_uri = format!("http://localhost:{port}/oauth2callback");
+    let redirect_uri = format!("http://127.0.0.1:{port}/oauth2callback");
     let verifier = pkce_verifier();
     let challenge = pkce_challenge_s256(&verifier);
     let state = format!("{OAUTH_STATE_PREFIX}{}", random_state());
@@ -333,23 +369,22 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
-
+    let bridge_url = resolve_oauth_token_bridge_url();
     let token_res = client
-        .post(TOKEN_URL)
-        .form(&[
-            ("client_id", client_id),
-            ("code", code.as_str()),
-            ("code_verifier", verifier.as_str()),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri.as_str()),
-        ])
+        .post(bridge_url)
+        .json(&BridgeAuthCodeRequest {
+            grant_type: "authorization_code",
+            code: code.as_str(),
+            code_verifier: verifier.as_str(),
+            redirect_uri: redirect_uri.as_str(),
+        })
         .send()
-        .map_err(|e| format!("OAuth: token HTTP: {e}"))?;
+        .map_err(|e| format!("OAuth bridge: token HTTP: {e}"))?;
 
     if !token_res.status().is_success() {
         let t = token_res.text().unwrap_or_default();
         let hint = if t.contains("redirect_uri_mismatch") {
-            " Confirma no Google Cloud que o OAuth Client é do tipo Desktop e que o callback loopback (localhost) está permitido."
+            " Confirma no Google Cloud que callbacks loopback locais estão permitidos."
         } else {
             ""
         };
@@ -368,23 +403,22 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
     Ok(())
 }
 
-pub async fn refresh_access_token(app: &AppHandle, refresh: &str) -> Result<String, String> {
-    let client_id = resolve_client_id(app)?;
+pub async fn refresh_access_token(_app: &AppHandle, refresh: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
 
+    let bridge_url = resolve_oauth_token_bridge_url();
     let token_res = client
-        .post(TOKEN_URL)
-        .form(&[
-            ("client_id", client_id.as_str()),
-            ("refresh_token", refresh),
-            ("grant_type", "refresh_token"),
-        ])
+        .post(bridge_url)
+        .json(&BridgeRefreshRequest {
+            grant_type: "refresh_token",
+            refresh_token: refresh,
+        })
         .send()
         .await
-        .map_err(|e| format!("token: {e}"))?;
+        .map_err(|e| format!("token bridge: {e}"))?;
 
     if !token_res.status().is_success() {
         let t = token_res.text().await.unwrap_or_default();
