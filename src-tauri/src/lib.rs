@@ -55,6 +55,12 @@ pub struct AppConfig {
     /// Fechar a janela principal apenas oculta; sair pela bandeja.
     #[serde(default)]
     pub close_to_tray: bool,
+    /// Cantos arredondados no conteúdo da janela (CSS).
+    #[serde(default = "default_true")]
+    pub window_rounded_corners: bool,
+    /// Contorno de 1px à volta do conteúdo (janela sem decorações nativas).
+    #[serde(default = "default_true")]
+    pub window_show_border: bool,
 }
 
 fn default_auto_sync_minutes() -> u32 {
@@ -69,6 +75,10 @@ fn default_agenda_view() -> String {
     "month".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -79,6 +89,8 @@ impl Default for AppConfig {
             desktop_behind_icons: false,
             auto_sync_minutes: 0,
             close_to_tray: false,
+            window_rounded_corners: true,
+            window_show_border: true,
         }
     }
 }

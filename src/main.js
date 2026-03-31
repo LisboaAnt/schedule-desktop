@@ -41,7 +41,7 @@ let agendaView = "month";
 /** Data âncora para navegação (dia em foco) */
 let cursor = new Date();
 
-/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean }} */
+/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean, windowRoundedCorners?: boolean, windowShowBorder?: boolean }} */
 let appConfig = {
   viewMode: "widget",
   theme: "dark",
@@ -49,6 +49,8 @@ let appConfig = {
   agendaView: "month",
   autoSyncMinutes: 0,
   closeToTray: false,
+  windowRoundedCorners: true,
+  windowShowBorder: true,
 };
 
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -883,6 +885,14 @@ function applyOpacity(opacity) {
   document.documentElement.style.setProperty("--fill-a", String(v));
 }
 
+/** Cantos e contorno desenhados em CSS (janela sem decorações Tauri). */
+function applyWindowChrome() {
+  const rounded = appConfig.windowRoundedCorners !== false;
+  const border = appConfig.windowShowBorder !== false;
+  document.body.classList.toggle("window-sharp-corners", !rounded);
+  document.body.classList.toggle("window-no-border", !border);
+}
+
 /** 0–65% (mais = janela mais transparente); opacidade = 1 − pct/100 (mín. 0,35) */
 function syncTransparencyControlsFromOpacity() {
   const pct = Math.min(
@@ -925,6 +935,8 @@ async function persistConfig() {
         typeof appConfig.closeToTray === "boolean"
           ? appConfig.closeToTray
           : Boolean(prev.closeToTray),
+      windowRoundedCorners: appConfig.windowRoundedCorners !== false,
+      windowShowBorder: appConfig.windowShowBorder !== false,
     },
   });
 }
@@ -943,6 +955,8 @@ async function loadConfig() {
       agendaView: c.agendaView || "month",
       autoSyncMinutes,
       closeToTray: Boolean(c.closeToTray),
+      windowRoundedCorners: c.windowRoundedCorners !== false,
+      windowShowBorder: c.windowShowBorder !== false,
     };
   } catch (e) {
     console.warn("get_app_config", e);
@@ -950,6 +964,7 @@ async function loadConfig() {
   applyTheme(appConfig.theme);
   applyViewMode("widget");
   applyOpacity(appConfig.widgetOpacity);
+  applyWindowChrome();
   agendaView =
     appConfig.agendaView === "week" || appConfig.agendaView === "day"
       ? appConfig.agendaView
@@ -971,6 +986,11 @@ async function loadConfig() {
 
   const closeTray = document.getElementById("chk-close-to-tray");
   if (closeTray) closeTray.checked = Boolean(appConfig.closeToTray);
+
+  const chkRounded = document.getElementById("chk-window-rounded");
+  if (chkRounded) chkRounded.checked = appConfig.windowRoundedCorners !== false;
+  const chkBorder = document.getElementById("chk-window-border");
+  if (chkBorder) chkBorder.checked = appConfig.windowShowBorder !== false;
 
   void refreshAutostartCheckbox();
 
@@ -1479,6 +1499,18 @@ window.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("chk-close-to-tray")?.addEventListener("change", async (e) => {
     appConfig.closeToTray = /** @type {HTMLInputElement} */ (e.target).checked;
+    await persistConfig();
+  });
+
+  document.getElementById("chk-window-rounded")?.addEventListener("change", async (e) => {
+    appConfig.windowRoundedCorners = /** @type {HTMLInputElement} */ (e.target).checked;
+    applyWindowChrome();
+    await persistConfig();
+  });
+
+  document.getElementById("chk-window-border")?.addEventListener("change", async (e) => {
+    appConfig.windowShowBorder = /** @type {HTMLInputElement} */ (e.target).checked;
+    applyWindowChrome();
     await persistConfig();
   });
 

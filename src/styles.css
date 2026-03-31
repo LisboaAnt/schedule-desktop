@@ -59,6 +59,14 @@ body {
   overflow: hidden;
 }
 
+body.window-sharp-corners {
+  border-radius: 0;
+}
+
+body.window-no-border {
+  border: none;
+}
+
 /* Modo “fundo do ambiente de trabalho”: barra oculta; calendário preenche a janela (tamanho mantido). */
 html.wallpaper-calendar-only {
   height: 100%;
@@ -89,6 +97,10 @@ body.desktop-wallpaper-mode .shell {
   max-width: none;
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+body.desktop-wallpaper-mode.window-sharp-corners .shell {
+  border-radius: 0;
 }
 
 body.desktop-wallpaper-mode .agenda-panel {

@@ -1,6 +1,9 @@
 # Gera instaladores Windows (.msi WiX + .exe NSIS) e publica na aba Releases do GitHub.
 # Só corre quando disparas manualmente (Actions → Release (Windows) → Run workflow).
 # Requisito: Settings → Actions → General → Workflow permissions → "Read and write".
+#
+# O passo mais lento é compilar Rust em release + empacotar. O rust-cache acelera runs seguintes
+# (mesmo Cargo.lock). Para só um instalador, podes usar em `args`: `-b msi` ou `-b nsis`.
 
 name: Release (Windows)
 
@@ -55,4 +58,4 @@ jobs:
           prerelease: false
           uploadUpdaterJson: false
           uploadWorkflowArtifacts: true
-          args: --verbose
+          args: --ci
