@@ -157,7 +157,7 @@
               <article class="settings-card">
                 <div class="settings-card-head">
                   <h3 class="settings-card-title">Aparência</h3>
-                  <p class="settings-card-desc">Tema do sistema, transparência e tamanho das células na grelha.</p>
+                  <p class="settings-card-desc">Tema do sistema e transparência da janela.</p>
                 </div>
                 <div class="settings-card-body">
                   <label class="field settings-field">
@@ -169,15 +169,19 @@
                     </select>
                   </label>
                   <label class="field settings-field">
-                    <span class="settings-label">Opacidade da janela</span>
-                    <input type="range" id="range-opacity" min="0.5" max="1" step="0.05" value="1" class="settings-range" />
-                  </label>
-                  <label class="field settings-field">
-                    <span class="settings-label">Densidade da vista</span>
-                    <select id="select-view-layout" class="settings-input" title="Compacto = menos espaço; expandido = células maiores">
-                      <option value="widget">Compacto (widget)</option>
-                      <option value="app">Expandido</option>
-                    </select>
+                    <span class="settings-label">Transparência</span>
+                    <div class="settings-range-row">
+                      <input
+                        type="range"
+                        id="range-transparency"
+                        min="0"
+                        max="65"
+                        step="5"
+                        value="0"
+                        class="settings-range settings-range--flex"
+                      />
+                      <span class="settings-range-value" id="range-transparency-value" aria-live="polite">0%</span>
+                    </div>
                   </label>
                 </div>
               </article>

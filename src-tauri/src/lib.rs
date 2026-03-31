@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{
+    AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, RunEvent, Runtime, WebviewWindow,
+};
 
 mod calendar_model;
 mod google_calendar;
@@ -15,9 +17,6 @@ mod windows_desktop;
 
 #[cfg(windows)]
 use std::sync::atomic::{AtomicBool, Ordering};
-
-#[cfg(windows)]
-use tauri::PhysicalPosition;
 
 #[cfg(windows)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -140,6 +139,67 @@ fn undo_desktop_wallpaper_on_launch(app: &tauri::AppHandle) {
         }
     }
     undo_desktop_behind_if_needed(app);
+}
+
+/// Mesma heurística que `tauri-plugin-window-state`: algum canto do retângulo da janela está dentro do ecrã?
+fn monitor_intersects_window_outer(
+    m: &Monitor,
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> bool {
+    let left = m.position().x;
+    let right = left + m.size().width as i32;
+    let top = m.position().y;
+    let bottom = top + m.size().height as i32;
+    [
+        (position.x, position.y),
+        (position.x + size.width as i32, position.y),
+        (position.x, position.y + size.height as i32),
+        (
+            position.x + size.width as i32,
+            position.y + size.height as i32,
+        ),
+    ]
+    .into_iter()
+    .any(|(x, y)| x >= left && x < right && y >= top && y < bottom)
+}
+
+fn window_outer_intersects_any_monitor<R: Runtime>(
+    win: &WebviewWindow<R>,
+) -> tauri::Result<bool> {
+    let position = win.outer_position()?;
+    let size = win.outer_size()?;
+    let monitors = win.available_monitors()?;
+    Ok(monitors
+        .iter()
+        .any(|m| monitor_intersects_window_outer(m, position, size)))
+}
+
+/// Se a janela principal não intersecta nenhum ecrã (ex.: coordenadas antigas após desligar um monitor), centra.
+fn clamp_main_window_to_visible_workspace<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(windows)]
+    if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        return;
+    }
+    if win.is_minimized().unwrap_or(true) {
+        return;
+    }
+    if win.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let Ok(intersects) = window_outer_intersects_any_monitor(&win) else {
+        return;
+    };
+    if intersects {
+        return;
+    }
+    let _ = win.center();
 }
 
 #[cfg(windows)]
@@ -533,6 +593,13 @@ fn window_is_maximized(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Garante que a janela principal não ficou fora de todos os monitores (útil após mudar ecrãs).
+#[tauri::command]
+fn ensure_main_window_on_screen(app: tauri::AppHandle) -> Result<(), String> {
+    clamp_main_window_to_visible_workspace(&app);
+    Ok(())
+}
+
 /// Recoloca a pílula no canto do calendário após o layout (janela mantém o tamanho).
 #[tauri::command]
 async fn reposition_restore_pill(app: tauri::AppHandle) -> Result<(), String> {
@@ -607,6 +674,14 @@ pub fn run() {
             if let Err(e) = setup_tray(app.handle()) {
                 eprintln!("[agenda] bandeja do sistema: {e}");
             }
+            let h = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                let handle = h.clone();
+                let _ = h.run_on_main_thread(move || {
+                    clamp_main_window_to_visible_workspace(&handle);
+                });
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -630,11 +705,17 @@ pub fn run() {
             window_close_main,
             window_toggle_maximized,
             window_is_maximized,
+            ensure_main_window_on_screen,
             reposition_restore_pill,
             restore_desktop_wallpaper_mode,
             autostart_set,
             autostart_is_enabled
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, RunEvent::Resumed) {
+                clamp_main_window_to_visible_workspace(app);
+            }
+        });
 }

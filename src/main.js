@@ -798,7 +798,26 @@ function applyViewMode(mode) {
 
 function applyOpacity(opacity) {
   const v = Math.min(1, Math.max(0.35, opacity));
-  document.body.style.opacity = String(v);
+  document.documentElement.style.setProperty("--fill-a", String(v));
+}
+
+/** 0–65% (mais = janela mais transparente); opacidade = 1 − pct/100 (mín. 0,35) */
+function syncTransparencyControlsFromOpacity() {
+  const pct = Math.min(
+    65,
+    Math.max(0, Math.round(((1 - appConfig.widgetOpacity) * 100) / 5) * 5),
+  );
+  const range = document.getElementById("range-transparency");
+  const out = document.getElementById("range-transparency-value");
+  if (range) {
+    range.value = String(pct);
+    range.setAttribute("aria-valuetext", `${pct}% transparente`);
+  }
+  if (out) out.textContent = `${pct}%`;
+}
+
+function opacityFromTransparencyPercent(pct) {
+  return 1 - Math.min(65, Math.max(0, Number(pct))) / 100;
 }
 
 async function persistConfig() {
@@ -811,7 +830,7 @@ async function persistConfig() {
   }
   await invoke("save_app_config", {
     config: {
-      viewMode: appConfig.viewMode,
+      viewMode: "widget",
       theme: appConfig.theme,
       widgetOpacity: appConfig.widgetOpacity,
       agendaView: appConfig.agendaView,
@@ -835,7 +854,7 @@ async function loadConfig() {
     const rawMin = Number(c.autoSyncMinutes);
     const autoSyncMinutes = allowed.has(rawMin) ? rawMin : 0;
     appConfig = {
-      viewMode: c.viewMode || "widget",
+      viewMode: "widget",
       theme: c.theme || "dark",
       widgetOpacity:
         typeof c.widgetOpacity === "number" ? c.widgetOpacity : 1,
@@ -847,7 +866,7 @@ async function loadConfig() {
     console.warn("get_app_config", e);
   }
   applyTheme(appConfig.theme);
-  applyViewMode(appConfig.viewMode);
+  applyViewMode("widget");
   applyOpacity(appConfig.widgetOpacity);
   agendaView =
     appConfig.agendaView === "week" || appConfig.agendaView === "day"
@@ -861,9 +880,7 @@ async function loadConfig() {
       : appConfig.theme === "light"
         ? "light"
         : "dark";
-  document.getElementById("range-opacity").value = String(
-    appConfig.widgetOpacity,
-  );
+  syncTransparencyControlsFromOpacity();
 
   const autoSel = document.getElementById("select-auto-sync");
   if (autoSel) {
@@ -872,11 +889,6 @@ async function loadConfig() {
 
   const closeTray = document.getElementById("chk-close-to-tray");
   if (closeTray) closeTray.checked = Boolean(appConfig.closeToTray);
-
-  const layoutSel = document.getElementById("select-view-layout");
-  if (layoutSel) {
-    layoutSel.value = appConfig.viewMode === "app" ? "app" : "widget";
-  }
 
   void refreshAutostartCheckbox();
 
@@ -1262,26 +1274,24 @@ window.addEventListener("DOMContentLoaded", () => {
     await persistConfig();
   });
 
-  document.getElementById("select-view-layout")?.addEventListener("change", async (e) => {
-    appConfig.viewMode =
-      /** @type {HTMLSelectElement} */ (e.target).value === "app" ? "app" : "widget";
-    applyViewMode(appConfig.viewMode);
-    await persistConfig();
+  document.getElementById("range-transparency")?.addEventListener("input", (e) => {
+    const t = /** @type {HTMLInputElement} */ (e.target);
+    appConfig.widgetOpacity = opacityFromTransparencyPercent(t.value);
+    applyOpacity(appConfig.widgetOpacity);
+    t.setAttribute(
+      "aria-valuetext",
+      `${t.value}% transparente`,
+    );
+    const out = document.getElementById("range-transparency-value");
+    if (out) out.textContent = `${t.value}%`;
   });
 
-  document
-    .getElementById("range-opacity")
-    .addEventListener("input", (e) => {
-      appConfig.widgetOpacity = Number(e.target.value);
-      applyOpacity(appConfig.widgetOpacity);
-    });
-
-  document
-    .getElementById("range-opacity")
-    .addEventListener("change", async (e) => {
-      appConfig.widgetOpacity = Number(e.target.value);
-      await persistConfig();
-    });
+  document.getElementById("range-transparency")?.addEventListener("change", async (e) => {
+    appConfig.widgetOpacity = opacityFromTransparencyPercent(
+      /** @type {HTMLInputElement} */ (e.target).value,
+    );
+    await persistConfig();
+  });
 
   document.getElementById("btn-google-sign-in")?.addEventListener("click", async () => {
     setCalendarOAuthMessage("");
@@ -1404,6 +1414,7 @@ window.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("focus", () => {
     void syncCalendarOnWindowFocusThrottled();
     void syncMaximizeButton();
+    void invoke("ensure_main_window_on_screen").catch(() => {});
   });
 
   document.getElementById("gc-allday")?.addEventListener("change", () => {

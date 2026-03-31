@@ -11,6 +11,11 @@
   --selected: rgba(91, 141, 239, 0.25);
   --radius: 12px;
   --font: "Segoe UI", system-ui, sans-serif;
+  /* Canais para fundos com alpha (janela transparente → vê-se o ambiente de trabalho) */
+  --c-bg: 18 20 26;
+  --c-surface: 26 29 38;
+  --c-surface-2: 34 38 47;
+  --fill-a: 1;
 }
 
 body.theme-light {
@@ -24,6 +29,9 @@ body.theme-light {
   --border: #d8dde6;
   --today: #dbeafe;
   --selected: rgba(47, 111, 237, 0.15);
+  --c-bg: 240 242 245;
+  --c-surface: 255 255 255;
+  --c-surface-2: 244 246 249;
 }
 
 *,
@@ -32,18 +40,20 @@ body.theme-light {
   box-sizing: border-box;
 }
 
-html,
+html {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+}
+
 body {
   margin: 0;
   height: 100%;
   font-family: var(--font);
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   user-select: none;
-}
-
-body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
@@ -144,13 +154,13 @@ input,
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--surface);
+  background: rgb(var(--c-surface) / var(--fill-a, 1));
 }
 
 /* —— Barra superior + arrastar —— */
 .titlebar {
   flex-shrink: 0;
-  background: var(--surface);
+  background: rgb(var(--c-surface) / var(--fill-a, 1));
   border-bottom: 1px solid var(--border);
 }
 
@@ -322,7 +332,7 @@ input,
   padding: 6px 10px;
   font-size: 11px;
   font-weight: 700;
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   color: var(--muted);
   cursor: pointer;
   white-space: nowrap;
@@ -366,7 +376,7 @@ input,
   height: 36px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   color: var(--text);
   font-size: 20px;
   line-height: 1;
@@ -558,7 +568,7 @@ input,
 .cell.in-month {
   color: var(--text);
   cursor: pointer;
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
 }
 
 .cell.in-month:hover {
@@ -610,7 +620,7 @@ input,
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
   overflow: hidden;
 }
 
@@ -629,7 +639,7 @@ input,
 .week-col-head {
   padding: 8px 6px;
   text-align: center;
-  background: var(--surface);
+  background: rgb(var(--c-surface) / var(--fill-a, 1));
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
@@ -697,7 +707,7 @@ input,
   gap: 4px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
   border-left: 4px solid var(--task-color, var(--accent));
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
@@ -737,7 +747,7 @@ input,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   overflow: hidden;
 }
 
@@ -752,11 +762,10 @@ input,
   overflow-x: hidden;
   overscroll-behavior: contain;
   background: radial-gradient(
-      ellipse 100% 60% at 50% -25%,
-      var(--accent-soft),
-      transparent 52%
-    ),
-    var(--bg);
+    ellipse 100% 60% at 50% -25%,
+    var(--accent-soft),
+    transparent 52%
+  );
 }
 
 .settings-inner {
@@ -816,7 +825,7 @@ input,
 }
 
 .settings-card {
-  background: var(--surface);
+  background: rgb(var(--c-surface) / var(--fill-a, 1));
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 1rem 1.125rem 1.125rem;
@@ -828,7 +837,7 @@ input,
 }
 
 .settings-card--muted {
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
   border-style: solid;
   opacity: 0.98;
 }
@@ -943,7 +952,7 @@ input,
   padding: 0.55rem 0.75rem;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   color: var(--text);
   font: inherit;
   font-size: 0.8125rem;
@@ -967,13 +976,36 @@ input,
   cursor: pointer;
 }
 
+.settings-range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.settings-range--flex {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.settings-range-value {
+  flex-shrink: 0;
+  min-width: 2.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
+}
+
 .settings-status {
   margin: 0 0 0.75rem;
   padding: 0.65rem 0.85rem;
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--text);
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   border: 1px solid var(--border);
   border-radius: 10px;
 }
@@ -986,7 +1018,7 @@ input,
   color: var(--muted);
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
 }
 
 .settings-callout--subtle {
@@ -1047,7 +1079,7 @@ input,
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: rgb(var(--c-bg) / var(--fill-a, 1));
   color: var(--text);
   font: inherit;
   font-size: 12px;
@@ -1121,7 +1153,7 @@ input,
   padding: 0.5rem 0.75rem;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: rgb(var(--c-surface-2) / var(--fill-a, 1));
   color: var(--text);
   cursor: pointer;
 }

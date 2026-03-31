@@ -22,12 +22,12 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 
 - [x] Janela principal com título, ícone e tamanho mínimo adequado ao widget.
 - [x] Persistir **posição e tamanho** da janela ao fechar; restaurar ao abrir (`tauri-plugin-window-state`).
-- [ ] Suporte básico a **múltiplos monitores** (validar e ajustar se necessário).
-- [x] Alternar **modo widget** × **modo app** (layout distinto).
+- [x] Suporte básico a **múltiplos monitores**: clamp se a janela não intersecta nenhum ecrã (arranque, `Resumed`, foco) + doc [MULTI-MONITOR.md](./MULTI-MONITOR.md); modo WorkerW ainda depende do shell.
+- [x] Layout **widget** como base da UI (opção «densidade / modo app» removida das definições; `viewMode` persistido como `widget`).
 - [x] Opções de janela para widget: **sem decoração**; redimensionável; região de arrastar.
 - [x] Persistência de preferências em arquivo local (JSON via `app_config_dir`).
 - [x] Esqueleto de **tema**: variáveis CSS + claro / escuro / sistema.
-- [x] Painel de **definições** (tema, opacidade); abrir pasta de dados + repor layout da janela.
+- [x] Painel de **definições** (tema, transparência, sync, bandeja, autostart); abrir pasta de dados + repor layout da janela.
 
 ---
 
@@ -60,7 +60,8 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] **Iniciar com o Windows**: `tauri-plugin-autostart` + opção em Definições.
 - [x] **Ícone na bandeja**: mostrar, ocultar, sair (menu contextual).
 - [x] Comportamento opcional: **fechar = minimizar** para bandeja (`close_to_tray`).
-- [ ] Opções avançadas de personalização: **opacidade**, densidade, fonte, cores por token de tema.
+- [x] **Transparência** da janela (Tauri `transparent` + fundos CSS com `--fill-a`); slider em definições.
+- [ ] Personalização extra: **fonte**, **cores** por token de tema (densidade removida da UI).
 - [ ] Medição informal de **RAM em idle** (notas no README ou doc de release).
 
 ---
@@ -69,8 +70,8 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 
 - [x] **CONTRIBUTING.md** (base): como rodar, PRs, sem secrets — expandir com branches/templates depois.
 - [ ] **CODE_OF_CONDUCT.md** (opcional mas recomendado para OSS).
-- [ ] Templates de **issue** (bug, feature) e **pull request**.
-- [ ] **CHANGELOG.md** ou releases com notas por versão.
+- [x] Templates de **issue** (bug, feature) e **pull request** (`.github/ISSUE_TEMPLATE`, `pull_request_template.md`).
+- [x] **CHANGELOG.md** (secção *Unreleased* + evoluir por release).
 - [ ] Pipeline de **release**: artefatos `.msi`/`.exe` (ou nsis) anexados ao GitHub Releases.
 - [ ] Instruções para **assinatura** de binários (quando houver certificado).
 - [x] Política de segurança (**SECURITY.md**) e canal para reportar vulnerabilidades.

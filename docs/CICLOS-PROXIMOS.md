@@ -9,7 +9,7 @@ Resumo alinhado a [PLANEJAMENTO.md](./PLANEJAMENTO.md) e [TAREFAS-POR-CICLO.md](
 | Fase | Estado |
 |------|--------|
 | **0 — Fundação** | Concluída (repo, Tauri, CI, build). |
-| **1 — Shell + config** | Quase fechada: falta validação fina multi-monitor e extras em definições (abrir pasta de dados, reset). |
+| **1 — Shell + config** | Fechada para o essencial; **multi-monitor**: clamp + doc [MULTI-MONITOR.md](./MULTI-MONITOR.md) (modo WorkerW ainda a validar em todos os arranjos). |
 | **2 — Google Calendar** | **Em curso** — próximo bloco principal. |
 | **3 — Polimento / leveza** | Parcial: já existe **bandeja** básica; faltam sync periódico, iniciar com Windows, fechar→bandeja, etc. |
 | **4 — Comunidade** | Por iniciar (CONTRIBUTING, templates, CHANGELOG, releases). |

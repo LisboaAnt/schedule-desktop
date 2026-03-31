@@ -12,7 +12,7 @@ Agenda / calendário para **Windows 11** com:
 - **Modo aplicativo**: mesma base, UI expandida.
 - **Vistas** mês, semana e dia; tarefas por dia (demo em `src/agenda.js` até haver Google Calendar).
 - **Sincronização bidirecional com Google Calendar** (planeada).
-- **Visual personalizável** (tema, opacidade; mais tokens depois).
+- **Visual personalizável** (tema, transparência da janela via `--fill-a` + janela Tauri transparente; mais tokens depois).
 - Foco em **baixo uso de RAM, CPU e rede**; adequado a **iniciar com o Windows**.
 - **Open source** no GitHub.
 
@@ -28,6 +28,8 @@ Agenda / calendário para **Windows 11** com:
 | [docs/GOOGLE-CALENDAR-FASE2.md](./docs/GOOGLE-CALENDAR-FASE2.md) | OAuth + Calendar API (implementação) |
 | [docs/COMO-RODAR.md](./docs/COMO-RODAR.md) | Rodar no PC (Windows 11), toolchain nativa vs Docker |
 | [docs/ARQUITETURA-E-STACK.md](./docs/ARQUITETURA-E-STACK.md) | Stack recomendada (Tauri + WebView2), módulos, sync, otimizações, segurança |
+| [CHANGELOG.md](./CHANGELOG.md) | Alterações por versão |
+| [docs/MULTI-MONITOR.md](./docs/MULTI-MONITOR.md) | Vários ecrãs, estado da janela, modo atrás dos ícones |
 
 Leia estes dois antes de implementar funcionalidades grandes.
 
@@ -58,11 +60,11 @@ Leia estes dois antes de implementar funcionalidades grandes.
 - **Tauri 2** + frontend **vanilla** em `src/` (`index.html`, `styles.css`, `main.js`).
 - **Plugin window-state**: posição e tamanho da janela persistidos.
 - **Comandos Rust** `get_app_config` / `save_app_config` (JSON em `app_config_dir`).
-- UI: agenda (mês/semana/dia), tarefas demo, arrastar na barra superior (`-webkit-app-region: drag`), definições.
+- UI: agenda (mês/semana/dia), sync Google, editor de eventos, arrastar na barra superior (`-webkit-app-region: drag`), definições com transparência; vista mês com número de linhas por célula conforme altura da janela.
 - **LICENSE** (MIT), **README.md**, **CI** (`.github/workflows/ci.yml` — build Windows).
 - Ícones em `src-tauri/icons/` (gerados a partir de fonte removida do repo).
 
-Próximos passos grandes: **OAuth + Google Calendar API** (preencher SQLite, UI de eventos), **iniciar com Windows**, bandeja completa — ver [docs/CICLOS-PROXIMOS.md](./docs/CICLOS-PROXIMOS.md) e [docs/TAREFAS-POR-CICLO.md](./docs/TAREFAS-POR-CICLO.md).
+Próximos passos: **lazy loading** na UI (muitos eventos), **revisão de dependências**, **CHANGELOG/releases**, validação **multi-monitor** — ver [docs/CICLOS-PROXIMOS.md](./docs/CICLOS-PROXIMOS.md), [TAREFAS-POR-CICLO.md](./docs/TAREFAS-POR-CICLO.md) e [CHANGELOG.md](./CHANGELOG.md).
 
 ---
 
