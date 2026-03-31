@@ -41,5 +41,12 @@
     ],
     "shortDescription": "Calendário widget e app para Windows",
     "longDescription": "Calendário leve com modo widget e integração Google Calendar (em desenvolvimento)."
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["agenda"]
+      }
+    }
   }
 }

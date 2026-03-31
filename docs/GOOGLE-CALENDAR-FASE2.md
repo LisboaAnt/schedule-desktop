@@ -1,6 +1,6 @@
 # Google Calendar — Fase 2 (guia de implementação)
 
-Não coloques **client secret** nem refresh tokens no repositório. Usa variáveis de ambiente ou ficheiros locais ignorados pelo `.gitignore`.
+Não coloques **client secret** nem refresh tokens no repositório (exceto se aceitares embutir o secret na build via CI com segredos). O **Client ID** é público: podes colá-lo em `EMBEDDED_GOOGLE_OAUTH_CLIENT_ID` em `google_calendar.rs` para não depender de `.env` (o Tauri nem sempre carrega `.env` como esperas).
 
 O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data_dir` (nome `google_oauth_refresh_token`, ao lado do SQLite), com espelho opcional no Credential Manager do Windows. Isto evita falhas em que o keyring em modo dev não persistia a leitura.
 
@@ -8,8 +8,8 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 
 1. Cria um projeto (ou usa um existente).
 2. Ativa a **Google Calendar API**.
-3. **Credenciais** → criar ID de cliente **OAuth** → tipo **Aplicativo para computador** (ou “Desktop”) conforme a consola atual.
-4. **URIs de redirecionamento** autorizados: `http://127.0.0.1:17892/callback` (porta fixa definida em `src-tauri/src/google_calendar.rs`).
+3. **Credenciais** → criar ID de cliente **OAuth** → em geral tipo **Aplicação Web** (redirect HTTPS) ou **Desktop** conforme a consola; o redirect efetivo é sempre o URL público abaixo.
+4. **URIs de redirecionamento** autorizados: `https://www.alemsys.digital/auth/google/callback` (definido em `OAUTH_REDIRECT_URI` em `src-tauri/src/google_calendar.rs`). Essa página no site reencaminha para o protocolo personalizado `agenda://google-oauth?…` para a app desktop concluir o OAuth com PKCE.
 5. Escopos na app: `https://www.googleapis.com/auth/calendar.events` (ler e criar/editar eventos). Se ligaste a conta com um escopo antigo (`…readonly`), volta a **Ligar conta Google** para consentir o novo.
 
 ## Escopos e quotas (para utilizadores e contribuidores)
@@ -21,8 +21,10 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 
 ## Fluxo recomendado (desktop)
 
-- **OAuth 2.0 com PKCE** + **authorization code** com redirect para **localhost**.
-- Guardar **refresh token** de forma segura (ex.: Windows Credential Manager via crate/plugin Tauri).
+- **OAuth 2.0 com PKCE** + **authorization code** com redirect **HTTPS** (`OAUTH_REDIRECT_URI`), depois **deep link** `agenda://google-oauth?code=…&state=…` (o `state` começa por `agenda_` para não colidir com um futuro login Google só-web no mesmo path).
+- **Cliente Web** na Google: costuma exigir **client secret** na troca de token — define `GOOGLE_OAUTH_CLIENT_SECRET` (ou ficheiro local) na build ou na máquina. **Cliente Desktop** (se permitir este redirect na consola): pode funcionar só com PKCE.
+- A app usa **single-instance** + **deep-link** (Tauri) para receber `agenda://` no Windows/Linux quando já está aberta; em arranque com URL nos argumentos, `get_current` trata o primeiro pedido.
+- Guardar **refresh token** de forma segura (ficheiro em `app_local_data_dir` + keyring quando disponível).
 - Renovar **access token** antes de expirar; nunca logar tokens em builds de release.
 
 ## API Calendar v3 (referência)

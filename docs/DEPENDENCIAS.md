@@ -31,7 +31,6 @@
 | `urlencoding` | Query OAuth |
 | `open` | Abrir o browser no fluxo OAuth |
 | `chrono` | Datas de eventos / intervalos de sync |
-| `dotenvy` | Carregar `.env` em desenvolvimento |
 | `windows` (target Windows) | WorkerW / DWM / posição da pílula |
 
 **Conclusão:** não há crate óbvio para remover sem substituir funcionalidade (ex.: tirar `open` obrigaria outra forma de lançar o browser no OAuth).

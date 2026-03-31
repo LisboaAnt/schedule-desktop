@@ -1208,7 +1208,7 @@ function updateGoogleButtons(state) {
     if (!cfg) {
       hint.classList.remove("hidden");
       hint.textContent =
-        "A app instalada não inclui o .env do desenvolvimento. Abre «Pasta de configuração» abaixo e cria o ficheiro google_oauth_client_id.txt com uma linha (só o Client ID). Se na Google Cloud a credencial for tipo «aplicação Web», cria também google_oauth_client_secret.txt com o secret. Na consola Google, autoriza o redirect http://127.0.0.1:17892/callback (recomendado: credencial «Computador/Desktop», sem secret, com PKCE). Guia no repo: docs/GOOGLE-CALENDAR-FASE2.md.";
+        "Falta o Client ID OAuth: na build define GOOGLE_OAUTH_CLIENT_ID, ou preenche EMBEDDED_GOOGLE_OAUTH_CLIENT_ID em src-tauri/src/google_calendar.rs (é público), ou abre «Pasta de configuração» e cria google_oauth_client_id.txt com uma linha. Cliente Web na Google: também google_oauth_client_secret.txt ou secret na build. Redirect: https://www.alemsys.digital/auth/google/callback → agenda://. Guia: docs/GOOGLE-CALENDAR-FASE2.md.";
     } else {
       hint.classList.add("hidden");
       hint.textContent = "";

@@ -7,11 +7,14 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{
     AppHandle, Manager, Monitor, PhysicalPosition, PhysicalSize, RunEvent, Runtime, WebviewWindow,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 
 mod calendar_model;
 mod google_calendar;
 mod local_store;
 
+#[cfg(windows)]
+mod windows_autostart;
 #[cfg(windows)]
 mod windows_desktop;
 
@@ -445,7 +448,10 @@ async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     use tauri_plugin_autostart::ManagerExt;
     let m = app.autolaunch();
     if enabled {
-        m.enable().map_err(|e| e.to_string())
+        m.enable().map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        windows_autostart::rewrite_run_value_with_quoted_exe(&app)?;
+        Ok(())
     } else {
         m.disable().map_err(|e| e.to_string())
     }
@@ -475,7 +481,7 @@ pub struct CalendarState {
     pub source: String,
     pub connected: bool,
     pub db_ready: bool,
-    /// `true` se `GOOGLE_OAUTH_CLIENT_ID` ou `google_oauth_client_id.txt` estiver definido.
+    /// `true` se Client ID estiver em código, na build, em env ou em `google_oauth_client_id.txt`.
     #[serde(default)]
     pub client_id_configured: bool,
     /// Mutações à espera de rede / API (fila offline).
@@ -776,11 +782,14 @@ fn restore_desktop_wallpaper_mode(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _ = dotenvy::dotenv();
-    if std::env::var("GOOGLE_OAUTH_CLIENT_ID").is_err() {
-        let _ = dotenvy::from_filename("../.env");
-    }
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -808,11 +817,27 @@ pub fn run() {
         })
         .setup(|app| {
             undo_desktop_wallpaper_on_launch(app.handle());
+            #[cfg(windows)]
+            windows_autostart::fix_if_autostart_entry_exists(app.handle());
             if let Err(e) = local_store::init(app.handle()) {
                 eprintln!("[agenda] base local (SQLite): {e}");
             }
             if let Err(e) = setup_tray(app.handle()) {
                 eprintln!("[agenda] bandeja do sistema: {e}");
+            }
+            let handle = app.handle().clone();
+            if let Err(e) = handle.deep_link().register_all() {
+                eprintln!("[agenda] deep-link register_all: {e}");
+            }
+            let _ = handle.deep_link().on_open_url(|event| {
+                for u in event.urls() {
+                    google_calendar::try_complete_oauth_from_deep_link(u.as_str());
+                }
+            });
+            if let Ok(Some(urls)) = handle.deep_link().get_current() {
+                for u in urls {
+                    google_calendar::try_complete_oauth_from_deep_link(u.as_str());
+                }
             }
             let h = app.handle().clone();
             std::thread::spawn(move || {

@@ -30,9 +30,11 @@ url = "2"
 urlencoding = "2"
 open = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-dotenvy = "0.15"
+tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [target.'cfg(windows)'.dependencies]
+winreg = "0.52"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
