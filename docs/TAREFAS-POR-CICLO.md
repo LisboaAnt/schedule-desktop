@@ -55,7 +55,7 @@ Checklist operacional alinhada ao [PLANEJAMENTO.md](./PLANEJAMENTO.md). Marque `
 - [x] **Ícone na bandeja** (básico): menu / clique para trazer a janela à frente (completar: ocultar, sair, etc.).
 - [x] Intervalo de **sync automático** configurável + botão “sincronizar agora”.
 - [x] Sync ao **focar** a janela (com throttle ~90 s).
-- [ ] **Lazy loading** de meses/dias na UI; evitar renderizar milhares de nós de uma vez.
+- [x] **Limitação de lista** na UI (semana / dia): máx. cartões por coluna e por dia + aviso «+N mais»; ordenação unificada com a vista mês (lazy loading virtual não implementado).
 - [ ] Revisão de **dependências** (remover o que não for essencial).
 - [x] **Iniciar com o Windows**: `tauri-plugin-autostart` + opção em Definições.
 - [x] **Ícone na bandeja**: mostrar, ocultar, sair (menu contextual).

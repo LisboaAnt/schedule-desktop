@@ -57,6 +57,24 @@ let lastWindowFocusSyncMs = 0;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let monthLayoutDebounce = null;
 
+/** Máx. cartões por coluna (semana) / no dia — evita DOM enorme com Google Calendar cheio. */
+const MAX_TASKS_WEEK_COLUMN = 60;
+const MAX_TASKS_DAY_VIEW = 120;
+
+/** Dia inteiro (sem hora) primeiro; depois hora; depois título. */
+function compareAgendaTasks(a, b) {
+  const aAll = !a.time;
+  const bAll = !b.time;
+  if (aAll !== bAll) return aAll ? -1 : 1;
+  if (a.time && b.time) {
+    const c = a.time.localeCompare(b.time);
+    if (c !== 0) return c;
+  }
+  return (a.title || "").localeCompare(b.title || "", undefined, {
+    sensitivity: "base",
+  });
+}
+
 function startOfWeek(d) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const wd = (x.getDay() + 6) % 7;
@@ -130,18 +148,7 @@ function scheduleMonthRelayoutFromResize() {
 
 /** Vista mês: hora + título quando a célula tem largura; só pontos quando é estreita. */
 function renderMonthCellTasks(container, iso, maxVisible) {
-  const tasks = [...tasksForDay(iso)].sort((a, b) => {
-    const aAll = !a.time;
-    const bAll = !b.time;
-    if (aAll !== bAll) return aAll ? -1 : 1;
-    if (a.time && b.time) {
-      const c = a.time.localeCompare(b.time);
-      if (c !== 0) return c;
-    }
-    return (a.title || "").localeCompare(b.title || "", undefined, {
-      sensitivity: "base",
-    });
-  });
+  const tasks = [...tasksForDay(iso)].sort(compareAgendaTasks);
   const slice = tasks.slice(0, maxVisible);
   for (const t of slice) {
     const chip = document.createElement("div");
@@ -668,10 +675,20 @@ function renderWeek() {
 
     const list = document.createElement("div");
     list.className = "week-col-tasks";
-    for (const t of tasksForDay(iso)) {
+    const dayTasks = [...tasksForDay(iso)].sort(compareAgendaTasks);
+    const shown = dayTasks.slice(0, MAX_TASKS_WEEK_COLUMN);
+    for (const t of shown) {
       list.append(renderTaskCard(t, false));
     }
-    if (tasksForDay(iso).length === 0) {
+    if (dayTasks.length > MAX_TASKS_WEEK_COLUMN) {
+      const more = document.createElement("p");
+      more.className = "week-more-tasks";
+      const n = dayTasks.length - MAX_TASKS_WEEK_COLUMN;
+      more.textContent = `+${n} mais`;
+      more.title = `${n} evento(s) não listados nesta coluna — usa a vista Dia ou Mês.`;
+      list.append(more);
+    }
+    if (dayTasks.length === 0) {
       const empty = document.createElement("p");
       empty.className = "week-empty";
       empty.textContent = "Sem tarefas";
@@ -721,7 +738,7 @@ function renderDay() {
   const root = document.getElementById("day-detail");
   root.replaceChildren();
 
-  const tasks = tasksForDay(iso);
+  const tasks = [...tasksForDay(iso)].sort(compareAgendaTasks);
   if (tasks.length === 0) {
     const p = document.createElement("p");
     p.className = "day-empty";
@@ -730,9 +747,17 @@ function renderDay() {
     return;
   }
 
-  tasks.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
-  for (const t of tasks) {
+  const shown = tasks.slice(0, MAX_TASKS_DAY_VIEW);
+  for (const t of shown) {
     root.append(renderTaskCard(t, true));
+  }
+  if (tasks.length > MAX_TASKS_DAY_VIEW) {
+    const foot = document.createElement("p");
+    foot.className = "day-more-tasks";
+    const n = tasks.length - MAX_TASKS_DAY_VIEW;
+    foot.textContent = `… e mais ${n} evento(s). Abre a vista Mês ou reduz o intervalo sincronizado.`;
+    foot.title = `${n} eventos omitidos para manter a lista rápida.`;
+    root.append(foot);
   }
 }
 

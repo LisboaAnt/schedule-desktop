@@ -681,6 +681,20 @@ input,
   padding: 12px 4px;
 }
 
+.week-more-tasks {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+}
+
 /* —— Vista dia —— */
 .day-detail {
   flex: 1;
@@ -698,6 +712,20 @@ input,
   color: var(--muted);
   font-size: 13px;
   padding: 24px 8px;
+}
+
+.day-more-tasks {
+  flex-shrink: 0;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--surface-2);
 }
 
 .task-card {
