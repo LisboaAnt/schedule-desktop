@@ -196,6 +196,45 @@ fn start_background_google_sync_worker(app: &tauri::AppHandle) {
     });
 }
 
+/// O Windows pode recriar a camada do ambiente de trabalho (`WorkerW` / Explorer).
+/// Nesse caso a janela anexada com `SetParent` pode ficar invisível ou «perdida».
+/// Reaplica periodicamente o ancoramento enquanto o modo wallpaper estiver ativo.
+#[cfg(windows)]
+fn start_wallpaper_layer_watchdog(app: &tauri::AppHandle) {
+    let h = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(90)).await;
+            if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+                continue;
+            }
+            let app = h.clone();
+            let app_for_cb = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let cfg = read_config_file(&app_for_cb).unwrap_or_default();
+                if !cfg.desktop_behind_icons {
+                    return;
+                }
+                let Some(main) = app_for_cb.get_webview_window("main") else {
+                    return;
+                };
+                if !main.is_visible().unwrap_or(true) {
+                    let _ = main.show();
+                }
+                if let Err(e) = windows_desktop::set_behind_icons(
+                    &main,
+                    true,
+                    cfg.window_rounded_corners,
+                    cfg.window_show_border,
+                ) {
+                    eprintln!("[agenda] reancorar modo fundo: {e}");
+                }
+                let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+            });
+        }
+    });
+}
+
 /// Ao arrancar: restaura o estado persistido do modo «atrás dos ícones».
 fn apply_desktop_wallpaper_state_on_launch(app: &tauri::AppHandle) {
     #[cfg(windows)]
@@ -943,6 +982,8 @@ pub fn run() {
                 eprintln!("[agenda] bandeja do sistema: {e}");
             }
             start_background_google_sync_worker(app.handle());
+            #[cfg(windows)]
+            start_wallpaper_layer_watchdog(app.handle());
             let handle = app.handle().clone();
             if let Err(e) = handle.deep_link().register_all() {
                 eprintln!("[agenda] deep-link register_all: {e}");
