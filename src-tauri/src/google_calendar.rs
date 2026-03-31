@@ -1,17 +1,16 @@
-//! OAuth 2.0 Google (PKCE + redirect HTTPS) e Calendar API v3 (cache SQLite).
+//! OAuth 2.0 Google (PKCE + callback loopback localhost) e Calendar API v3 (cache SQLite).
 //! Client ID (primeiro que existir): constante [`EMBEDDED_GOOGLE_OAUTH_CLIENT_ID`] (se preenchida),
 //! depois **compile time** `GOOGLE_OAUTH_CLIENT_ID` no `cargo tauri build`, depois env em runtime,
 //! depois ficheiro `google_oauth_client_id.txt` em `app_config_dir`. **Não é obrigatório usar `.env`.**
-//! **Client secret** (`GOOGLE_OAUTH_CLIENT_SECRET` ou `google_oauth_client_secret.txt`): típico para cliente
-//! OAuth tipo **aplicação Web** com redirect `https://…`; PKCE continua obrigatório no fluxo da app.
-//! Redirect OAuth: [`OAUTH_REDIRECT_URI`] (ex.: página em alemsys.digital que reencaminha para `agenda://…`).
-//! O `state` da Agenda começa por [`OAUTH_STATE_PREFIX`] para não colidir com login Google futuro do site.
+//! Fluxo recomendado para distribuição da app desktop: credencial OAuth **Desktop** (sem `client_secret`),
+//! mantendo PKCE obrigatório. O callback é local (`http://localhost:<porta>/oauth2callback`).
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::mpsc::SyncSender;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
@@ -41,27 +40,18 @@ const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// Leitura + criação/edição de eventos. Após mudar o escopo, volta a **Ligar conta Google**.
 const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 const PRIMARY: &str = "primary";
-/// URI de redirecionamento registado na Google Cloud (cliente Web ou equivalente).
-pub const OAUTH_REDIRECT_URI: &str = "https://www.alemsys.digital/auth/google/callback";
-/// Prefixo do parâmetro `state` OAuth da **app Agenda** (o site reencaminha para `agenda://` só se bater aqui).
+/// Prefixo do parâmetro `state` OAuth da **app Agenda**.
 pub const OAUTH_STATE_PREFIX: &str = "agenda_";
 /// Evita dois logins OAuth em simultâneo.
 static OAUTH_FLOW_MUTEX: Mutex<()> = Mutex::new(());
-/// Espera pelo deep link `agenda://google-oauth?…` após o browser voltar do Google.
+/// Tempo máximo para concluir o OAuth no browser.
 const OAUTH_CALLBACK_WAIT_SECS: u64 = 600;
-
-struct OauthDeepLinkPending {
-    expected_state: String,
-    tx: SyncSender<Result<String, String>>,
-}
-
-static OAUTH_DL_PENDING: Mutex<Option<OauthDeepLinkPending>> = Mutex::new(None);
 
 /// ID de cliente OAuth Google (valor **público** na consola Google). Se colocares aqui o teu Client ID,
 /// a app funciona sem `.env` e sem `google_oauth_client_id.txt` — útil quando o `.env` não é carregado no Tauri.
 /// Deixa vazio `""` se usares só variável na build ou ficheiro na pasta de configuração.
 const EMBEDDED_GOOGLE_OAUTH_CLIENT_ID: &str =
-    "996263499952-2n0nm3nbis0a884hseqvgrnpl7gqk94u.apps.googleusercontent.com";
+    "996263499952-5tdh2d08f0hril3o78bqt5dvg06pop7o.apps.googleusercontent.com";
 
 #[derive(Debug, Deserialize)]
 struct TokenJson {
@@ -116,42 +106,6 @@ pub fn resolve_client_id(app: &AppHandle) -> Result<String, String> {
 
 pub fn client_id_configured(app: &AppHandle) -> bool {
     resolve_client_id(app).is_ok()
-}
-
-fn oauth_client_secret_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("app_config_dir: {e}"))?;
-    Ok(dir.join("google_oauth_client_secret.txt"))
-}
-
-/// Secreto OAuth: necessário se o ID de cliente for tipo **Web** na Google Cloud; omitir para tipo **Desktop**.
-/// Ordem: `option_env!` na build → variável em runtime → ficheiro local (sem depender de `.env`).
-pub fn resolve_client_secret(app: &AppHandle) -> Option<String> {
-    if let Some(v) = option_env!("GOOGLE_OAUTH_CLIENT_SECRET") {
-        let t = v.trim();
-        if !t.is_empty() {
-            return Some(t.to_string());
-        }
-    }
-    if let Ok(v) = std::env::var("GOOGLE_OAUTH_CLIENT_SECRET") {
-        let t = v.trim().to_string();
-        if !t.is_empty() {
-            return Some(t);
-        }
-    }
-    if let Ok(path) = oauth_client_secret_path(app) {
-        if path.exists() {
-            if let Ok(s) = std::fs::read_to_string(&path) {
-                let t = s.trim().to_string();
-                if !t.is_empty() {
-                    return Some(t);
-                }
-            }
-        }
-    }
-    None
 }
 
 fn keyring_entry() -> Result<Entry, String> {
@@ -256,80 +210,87 @@ fn hex_lower(bytes: &[u8]) -> String {
     s
 }
 
-/// Chamado pelo handler do protocolo `agenda://` quando o site devolve o código (ou erro) na query.
-pub fn try_complete_oauth_from_deep_link(url_str: &str) {
-    let Ok(u) = url::Url::parse(url_str) else {
-        return;
-    };
-    if u.scheme() != "agenda" {
-        return;
-    }
-    if u.host_str() != Some("google-oauth") {
-        return;
-    }
+/// Compatibilidade com chamadas antigas de deep link; o fluxo atual usa callback loopback local.
+pub fn try_complete_oauth_from_deep_link(_url_str: &str) {
+}
 
-    let mut oauth_error: Option<String> = None;
-    let mut err_desc: Option<String> = None;
-    let mut code: Option<String> = None;
-    let mut state: Option<String> = None;
-    for (k, v) in u.query_pairs() {
-        match k.as_ref() {
-            "error" => oauth_error = Some(v.into_owned()),
-            "error_description" => err_desc = Some(v.into_owned()),
-            "code" => code = Some(v.into_owned()),
-            "state" => state = Some(v.into_owned()),
-            _ => {}
+fn wait_for_oauth_code_loopback(listener: &TcpListener, expected_state: &str) -> Result<String, String> {
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("OAuth: configurar callback local: {e}"))?;
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed() > Duration::from_secs(OAUTH_CALLBACK_WAIT_SECS) {
+            return Err(
+                "OAuth: tempo esgotado à espera do callback local. Mantém a Agenda aberta e termina o login no browser."
+                    .into(),
+            );
+        }
+        match listener.accept() {
+            Ok((mut stream, _addr)) => {
+                let mut first_line = String::new();
+                {
+                    let mut reader = BufReader::new(&mut stream);
+                    let _ = reader.read_line(&mut first_line);
+                }
+                let path = first_line
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/");
+                let callback_url = format!("http://localhost{path}");
+                let parsed = url::Url::parse(&callback_url)
+                    .map_err(|e| format!("OAuth: callback inválido: {e}"))?;
+                let mut oauth_error: Option<String> = None;
+                let mut err_desc: Option<String> = None;
+                let mut code: Option<String> = None;
+                let mut state: Option<String> = None;
+                for (k, v) in parsed.query_pairs() {
+                    match k.as_ref() {
+                        "error" => oauth_error = Some(v.into_owned()),
+                        "error_description" => err_desc = Some(v.into_owned()),
+                        "code" => code = Some(v.into_owned()),
+                        "state" => state = Some(v.into_owned()),
+                        _ => {}
+                    }
+                }
+                let ok_html = "<html><body><h3>Podes voltar para a app Agenda.</h3><script>window.close&&window.close()</script></body></html>";
+                let fail_html = "<html><body><h3>Falha no OAuth. Volta para a Agenda e tenta novamente.</h3></body></html>";
+                let (status_line, body, result) = if let Some(err) = oauth_error {
+                    let detail = err_desc.unwrap_or_default();
+                    let msg = if detail.is_empty() { err } else { format!("{err}: {detail}") };
+                    ("HTTP/1.1 400 Bad Request\r\n", fail_html, Err(format!("OAuth recusado: {msg}")))
+                } else if state.as_deref() != Some(expected_state) {
+                    (
+                        "HTTP/1.1 400 Bad Request\r\n",
+                        fail_html,
+                        Err("OAuth: estado inválido no callback local.".into()),
+                    )
+                } else if let Some(c) = code {
+                    ("HTTP/1.1 200 OK\r\n", ok_html, Ok(c))
+                } else {
+                    (
+                        "HTTP/1.1 400 Bad Request\r\n",
+                        fail_html,
+                        Err("OAuth: código em falta no callback local.".into()),
+                    )
+                };
+                let response = format!(
+                    "{status_line}Content-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                return result;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            Err(e) => return Err(format!("OAuth: callback local falhou: {e}")),
         }
     }
-
-    let Some(st) = state else {
-        return;
-    };
-    if !st.starts_with(OAUTH_STATE_PREFIX) {
-        return;
-    }
-
-    let mut g = OAUTH_DL_PENDING
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let Some(pending) = g.as_ref() else {
-        return;
-    };
-    if pending.expected_state != st {
-        return;
-    }
-    let pending = g.take().expect("pending just verified");
-
-    if let Some(e) = oauth_error {
-        let detail = err_desc.unwrap_or_default();
-        let msg = if detail.is_empty() {
-            e
-        } else {
-            format!("{e}: {detail}")
-        };
-        let _ = pending
-            .tx
-            .send(Err(format!("OAuth recusado: {msg}")));
-        return;
-    }
-
-    let Some(c) = code else {
-        let _ = pending
-            .tx
-            .send(Err("OAuth: código em falta na ligação à app.".into()));
-        return;
-    };
-    let _ = pending.tx.send(Ok(c));
 }
 
-fn clear_oauth_dl_pending_slot() {
-    let mut g = OAUTH_DL_PENDING
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    g.take();
-}
-
-/// Abre o browser, recebe o código via deep link e troca por tokens; guarda refresh token no keyring.
+/// Abre o browser, recebe o código por callback local (loopback) e troca por tokens.
 pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), String> {
     let _flow_guard = OAUTH_FLOW_MUTEX.try_lock().map_err(|e| match e {
         std::sync::TryLockError::WouldBlock => {
@@ -338,29 +299,17 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
         std::sync::TryLockError::Poisoned(_) => "OAuth: reinicia a app e tenta de novo.".to_string(),
     })?;
 
-    let redirect_uri = OAUTH_REDIRECT_URI.to_string();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("OAuth: não foi possível abrir callback local: {e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("OAuth: local_addr callback: {e}"))?
+        .port();
+    let redirect_uri = format!("http://localhost:{port}/oauth2callback");
     let verifier = pkce_verifier();
     let challenge = pkce_challenge_s256(&verifier);
     let state = format!("{OAUTH_STATE_PREFIX}{}", random_state());
-
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<String, String>>(1);
-    {
-        let mut g = OAUTH_DL_PENDING
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if g.is_some() {
-            return Err("OAuth: estado interno inconsistente. Reinicia a app.".into());
-        }
-        *g = Some(OauthDeepLinkPending {
-            expected_state: state.clone(),
-            tx,
-        });
-    }
-
-    let mut auth = url::Url::parse(AUTH_URL).map_err(|e| {
-        clear_oauth_dl_pending_slot();
-        e.to_string()
-    })?;
+    let mut auth = url::Url::parse(AUTH_URL).map_err(|e| e.to_string())?;
     {
         let mut q = auth.query_pairs_mut();
         q.append_pair("client_id", client_id);
@@ -376,56 +325,31 @@ pub fn run_desktop_oauth_flow(app: &AppHandle, client_id: &str) -> Result<(), St
 
     let url_str = auth.as_str();
     if let Err(e) = open::that(url_str) {
-        clear_oauth_dl_pending_slot();
         return Err(format!("OAuth: abrir browser: {e}"));
     }
-
-    let code = match rx.recv_timeout(Duration::from_secs(OAUTH_CALLBACK_WAIT_SECS)) {
-        Ok(Ok(c)) => c,
-        Ok(Err(e)) => return Err(e),
-        Err(_) => {
-            clear_oauth_dl_pending_slot();
-            return Err(
-                "OAuth: tempo esgotado ou ligação agenda:// não recebida. Mantém a Agenda aberta, inicia o login com «Ligar conta» e, no browser, aceita abrir a app quando o site pedir. Se não aparecer diálogo, reinstala ou repara a instalação para registar o protocolo «agenda»."
-                    .into(),
-            );
-        }
-    };
+    let code = wait_for_oauth_code_loopback(&listener, &state)?;
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let token_res = match resolve_client_secret(app) {
-        Some(ref sec) => client
-            .post(TOKEN_URL)
-            .form(&[
-                ("client_id", client_id),
-                ("code", code.as_str()),
-                ("code_verifier", verifier.as_str()),
-                ("grant_type", "authorization_code"),
-                ("redirect_uri", redirect_uri.as_str()),
-                ("client_secret", sec.as_str()),
-            ])
-            .send(),
-        None => client
-            .post(TOKEN_URL)
-            .form(&[
-                ("client_id", client_id),
-                ("code", code.as_str()),
-                ("code_verifier", verifier.as_str()),
-                ("grant_type", "authorization_code"),
-                ("redirect_uri", redirect_uri.as_str()),
-            ])
-            .send(),
-    }
-    .map_err(|e| format!("OAuth: token HTTP: {e}"))?;
+    let token_res = client
+        .post(TOKEN_URL)
+        .form(&[
+            ("client_id", client_id),
+            ("code", code.as_str()),
+            ("code_verifier", verifier.as_str()),
+            ("grant_type", "authorization_code"),
+            ("redirect_uri", redirect_uri.as_str()),
+        ])
+        .send()
+        .map_err(|e| format!("OAuth: token HTTP: {e}"))?;
 
     if !token_res.status().is_success() {
         let t = token_res.text().unwrap_or_default();
-        let hint = if t.contains("client_secret") {
-            " Cria credencial tipo **Desktop** na Google Cloud (sem secret) ou define GOOGLE_OAUTH_CLIENT_SECRET."
+        let hint = if t.contains("redirect_uri_mismatch") {
+            " Confirma no Google Cloud que o OAuth Client é do tipo Desktop e que o callback loopback (localhost) está permitido."
         } else {
             ""
         };
@@ -451,32 +375,16 @@ pub async fn refresh_access_token(app: &AppHandle, refresh: &str) -> Result<Stri
         .build()
         .map_err(|e| e.to_string())?;
 
-    let token_res = match resolve_client_secret(app) {
-        Some(ref sec) => {
-            client
-                .post(TOKEN_URL)
-                .form(&[
-                    ("client_id", client_id.as_str()),
-                    ("refresh_token", refresh),
-                    ("grant_type", "refresh_token"),
-                    ("client_secret", sec.as_str()),
-                ])
-                .send()
-                .await
-        }
-        None => {
-            client
-                .post(TOKEN_URL)
-                .form(&[
-                    ("client_id", client_id.as_str()),
-                    ("refresh_token", refresh),
-                    ("grant_type", "refresh_token"),
-                ])
-                .send()
-                .await
-        }
-    }
-    .map_err(|e| format!("token: {e}"))?;
+    let token_res = client
+        .post(TOKEN_URL)
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("refresh_token", refresh),
+            ("grant_type", "refresh_token"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("token: {e}"))?;
 
     if !token_res.status().is_success() {
         let t = token_res.text().await.unwrap_or_default();

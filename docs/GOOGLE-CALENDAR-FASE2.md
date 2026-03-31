@@ -8,8 +8,8 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 
 1. Cria um projeto (ou usa um existente).
 2. Ativa a **Google Calendar API**.
-3. **Credenciais** → criar ID de cliente **OAuth** → em geral tipo **Aplicação Web** (redirect HTTPS) ou **Desktop** conforme a consola; o redirect efetivo é sempre o URL público abaixo.
-4. **URIs de redirecionamento** autorizados: `https://www.alemsys.digital/auth/google/callback` (definido em `OAUTH_REDIRECT_URI` em `src-tauri/src/google_calendar.rs`). Essa página no site reencaminha para o protocolo personalizado `agenda://google-oauth?…` para a app desktop concluir o OAuth com PKCE.
+3. **Credenciais** → criar ID de cliente **OAuth** tipo **Desktop app**.
+4. O callback da app é local (`http://127.0.0.1:<porta>/oauth2callback`) e é gerado automaticamente no login; não precisa de URI pública fixa.
 5. Escopos na app: `https://www.googleapis.com/auth/calendar.events` (ler e criar/editar eventos). Se ligaste a conta com um escopo antigo (`…readonly`), volta a **Ligar conta Google** para consentir o novo.
 
 ## Escopos e quotas (para utilizadores e contribuidores)
@@ -21,9 +21,9 @@ O **refresh token** da sessão Google é guardado em ficheiro em `app_local_data
 
 ## Fluxo recomendado (desktop)
 
-- **OAuth 2.0 com PKCE** + **authorization code** com redirect **HTTPS** (`OAUTH_REDIRECT_URI`), depois **deep link** `agenda://google-oauth?code=…&state=…` (o `state` começa por `agenda_` para não colidir com um futuro login Google só-web no mesmo path).
-- **Cliente Web** na Google: costuma exigir **client secret** na troca de token — define `GOOGLE_OAUTH_CLIENT_SECRET` (ou ficheiro local) na build ou na máquina. **Cliente Desktop** (se permitir este redirect na consola): pode funcionar só com PKCE.
-- A app usa **single-instance** + **deep-link** (Tauri) para receber `agenda://` no Windows/Linux quando já está aberta; em arranque com URL nos argumentos, `get_current` trata o primeiro pedido.
+- **OAuth 2.0 com PKCE** + **authorization code** com callback local loopback (`127.0.0.1`) na própria app.
+- **Sem client secret**: para distribuição desktop, o `client_id` público é suficiente.
+- A app continua com suporte a **single-instance** + **deep-link** (Tauri), mas o login Google não depende disso.
 - Guardar **refresh token** de forma segura (ficheiro em `app_local_data_dir` + keyring quando disponível).
 - Renovar **access token** antes de expirar; nunca logar tokens em builds de release.
 

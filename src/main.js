@@ -1208,7 +1208,7 @@ function updateGoogleButtons(state) {
     if (!cfg) {
       hint.classList.remove("hidden");
       hint.textContent =
-        "Falta o Client ID OAuth: na build define GOOGLE_OAUTH_CLIENT_ID, ou preenche EMBEDDED_GOOGLE_OAUTH_CLIENT_ID em src-tauri/src/google_calendar.rs (é público), ou abre «Pasta de configuração» e cria google_oauth_client_id.txt com uma linha. Cliente Web na Google: também google_oauth_client_secret.txt ou secret na build. Redirect: https://www.alemsys.digital/auth/google/callback → agenda://. Guia: docs/GOOGLE-CALENDAR-FASE2.md.";
+        "Falta o Client ID OAuth: na build define GOOGLE_OAUTH_CLIENT_ID, ou preenche EMBEDDED_GOOGLE_OAUTH_CLIENT_ID em src-tauri/src/google_calendar.rs (é público), ou abre «Pasta de configuração» e cria google_oauth_client_id.txt com uma linha. Usa OAuth Client do tipo Desktop (sem secret), com callback local 127.0.0.1. Guia: docs/GOOGLE-CALENDAR-FASE2.md.";
     } else {
       hint.classList.add("hidden");
       hint.textContent = "";
