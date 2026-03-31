@@ -55,10 +55,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Opcional: em Settings → Secrets → Actions, define GOOGLE_OAUTH_CLIENT_ID (e, se for cliente Web, GOOGLE_OAUTH_CLIENT_SECRET)
+      # para embutir no binário em compile-time (option_env). Sem isso, cada utilizador usa google_oauth_client_id.txt na pasta de config.
       - name: Build and upload to GitHub Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         with:
           tagName: v__VERSION__
           releaseName: Agenda v__VERSION__
