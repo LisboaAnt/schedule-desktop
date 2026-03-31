@@ -489,6 +489,14 @@ pub struct CalendarState {
     pub pending_mutations_count: u32,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleUserProfileDto {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub picture: Option<String>,
+}
+
 #[tauri::command]
 fn get_calendar_state(app: tauri::AppHandle) -> CalendarState {
     let connected = google_calendar::has_refresh_token(&app);
@@ -528,6 +536,16 @@ async fn google_calendar_sync(app: tauri::AppHandle) -> Result<u32, String> {
         eprintln!("[agenda] fila offline após sync: {e}");
     }
     Ok(n as u32)
+}
+
+#[tauri::command]
+async fn google_calendar_user_profile(app: tauri::AppHandle) -> Result<GoogleUserProfileDto, String> {
+    let p = google_calendar::get_google_user_profile(&app).await?;
+    Ok(GoogleUserProfileDto {
+        email: p.email,
+        name: p.name,
+        picture: p.picture,
+    })
 }
 
 #[tauri::command]
@@ -855,6 +873,7 @@ pub fn run() {
             get_calendar_state,
             google_calendar_sign_in,
             google_calendar_sync,
+            google_calendar_user_profile,
             google_calendar_disconnect,
             get_cached_calendar_events,
             google_calendar_create_event,

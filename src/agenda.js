@@ -10,6 +10,7 @@ export function padIso(y, m, d) {
 
 /** @type {Record<string, AgendaTask[]>} */
 const DEMO = {};
+const LOCAL_STORAGE_KEY = "agenda_local_events_v1";
 
 function seedAroundToday() {
   const t = new Date();
@@ -59,8 +60,38 @@ function seedAroundToday() {
 
 seedAroundToday();
 
+function cloneAgendaMap(map) {
+  const out = {};
+  for (const [iso, list] of Object.entries(map || {})) {
+    out[iso] = Array.isArray(list) ? list.map((t) => ({ ...t })) : [];
+  }
+  return out;
+}
+
+function loadLocalMap() {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) return cloneAgendaMap(DEMO);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return cloneAgendaMap(DEMO);
+    return cloneAgendaMap(parsed);
+  } catch (_) {
+    return cloneAgendaMap(DEMO);
+  }
+}
+
+function persistLocalMap() {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localByIso));
+  } catch (_) {
+    /* ignorar quota/privacidade */
+  }
+}
+
 /** @type {Record<string, AgendaTask[]>} */
 let remoteByIso = {};
+/** @type {Record<string, AgendaTask[]>} */
+let localByIso = loadLocalMap();
 
 /** Quando `true`, a grelha usa só eventos remotos (cache Google), não o DEMO. */
 let useGoogleCalendar = false;
@@ -86,12 +117,77 @@ export function tasksForDay(iso) {
   if (useGoogleCalendar) {
     return remoteByIso[iso] ? [...remoteByIso[iso]] : [];
   }
-  return DEMO[iso] ? [...DEMO[iso]] : [];
+  return localByIso[iso] ? [...localByIso[iso]] : [];
 }
 
 export function taskCountForDay(iso) {
   if (useGoogleCalendar) {
     return remoteByIso[iso]?.length ?? 0;
   }
-  return DEMO[iso]?.length ?? 0;
+  return localByIso[iso]?.length ?? 0;
+}
+
+function removeLocalById(id) {
+  let touched = false;
+  for (const iso of Object.keys(localByIso)) {
+    const next = (localByIso[iso] || []).filter((t) => t.id !== id);
+    if (next.length !== (localByIso[iso] || []).length) {
+      touched = true;
+      if (next.length > 0) localByIso[iso] = next;
+      else delete localByIso[iso];
+    }
+  }
+  return touched;
+}
+
+function timeFromIsoOrUndefined(startIso, allDay) {
+  if (allDay || !startIso || !startIso.includes("T")) return undefined;
+  const d = new Date(startIso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function dayIsoFromStart(startIso) {
+  if (!startIso) return null;
+  if (startIso.length === 10) return startIso;
+  const d = new Date(startIso);
+  if (Number.isNaN(d.getTime())) return null;
+  return padIso(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * @param {{ id?: string|null, summary: string, allDay: boolean, startIso: string, endIso: string, description?: string|null, location?: string|null }} payload
+ * @returns {{ id: string }}
+ */
+export function upsertLocalTask(payload) {
+  const id =
+    typeof payload.id === "string" && payload.id.trim()
+      ? payload.id.trim()
+      : `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const iso = dayIsoFromStart(payload.startIso);
+  if (!iso) throw new Error("Evento local inválido: data inicial em falta.");
+  removeLocalById(id);
+  const item = {
+    id,
+    title: (payload.summary || "").trim() || "(sem título)",
+    time: timeFromIsoOrUndefined(payload.startIso, payload.allDay),
+    color: "#5b8def",
+    startAt: payload.startIso,
+    endAt: payload.endIso,
+    description: payload.description || null,
+    location: payload.location || null,
+  };
+  if (!localByIso[iso]) localByIso[iso] = [];
+  localByIso[iso].push(item);
+  persistLocalMap();
+  return { id };
+}
+
+export function deleteLocalTask(id) {
+  if (!id) return false;
+  const removed = removeLocalById(id);
+  if (removed) persistLocalMap();
+  return removed;
 }

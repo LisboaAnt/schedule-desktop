@@ -5,6 +5,8 @@ import {
   setRemoteTasksByIso,
   setUseGoogleCalendar,
   isGoogleCalendarActive,
+  upsertLocalTask,
+  deleteLocalTask,
 } from "./agenda.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -56,6 +58,7 @@ let appConfig = {
 /** @type {ReturnType<typeof setInterval> | null} */
 let calendarAutoSyncTimer = null;
 let lastWindowFocusSyncMs = 0;
+let oauthLoginInFlight = false;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let monthLayoutDebounce = null;
 
@@ -562,11 +565,6 @@ function closeEventEditor() {
 function openEventEditor(t) {
   const ov = document.getElementById("event-editor-overlay");
   if (!ov) return;
-  if (t) {
-    if (!isGoogleCalendarActive() || !t.calendarId) return;
-  } else if (!isGoogleCalendarActive()) {
-    return;
-  }
 
   const idEl = document.getElementById("edit-event-id");
   const calEl = document.getElementById("edit-calendar-id");
@@ -740,14 +738,12 @@ function renderTaskCard(t, showTimeLine) {
       ? `<span class="task-time muted">—</span>`
       : "";
   el.innerHTML = `${time}<span class="task-title">${escapeHtml(t.title)}</span>`;
-  if (isGoogleCalendarActive() && t.calendarId) {
-    el.classList.add("task-card--google");
-    el.title = "Clicar para editar ou apagar";
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openEventEditor(t);
-    });
-  }
+  el.classList.add("task-card--google");
+  el.title = "Clicar para editar ou apagar";
+  el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openEventEditor(t);
+  });
   return el;
 }
 
@@ -1051,7 +1047,7 @@ function updateSyncHint(state) {
     h.textContent = t;
   } else {
     h.textContent =
-      "Dados de demonstração na grelha. Liga o Google em Definições (client ID + OAuth).";
+      "Modo local ativo: podes criar, editar e apagar eventos sem login. Liga Google para sincronizar na nuvem.";
   }
 }
 
@@ -1128,10 +1124,10 @@ function normalizeCalendarState(raw) {
 
 /** Depois de OAuth com sucesso: o backend já tem refresh token — garante botões ativos mesmo se o estado IPC atrasar. */
 function applyGoogleButtonsSignedIn() {
-  const row = document.getElementById("calendar-actions");
-  const signIn = document.getElementById("btn-google-sign-in");
-  const sync = document.getElementById("btn-google-sync");
-  const disc = document.getElementById("btn-google-disconnect");
+  const row = document.getElementById("user-menu-dropdown");
+  const signIn = document.getElementById("btn-user-google-sign-in");
+  const sync = document.getElementById("btn-user-google-sync");
+  const disc = document.getElementById("btn-user-google-disconnect");
   if (!signIn || !sync || !disc) return;
   row?.classList.add("has-google-session");
   signIn.disabled = true;
@@ -1192,62 +1188,73 @@ async function applyGoogleCalendarToGrid() {
 }
 
 function setCalendarOAuthMessage(text) {
-  const m = document.getElementById("calendar-oauth-msg");
+  const m = document.getElementById("user-menu-status");
   if (m) m.textContent = text || "";
 }
 
+function setUserMenuAvatar(pictureUrl) {
+  const img = document.getElementById("user-menu-avatar");
+  const fallback = document.getElementById("user-menu-avatar-fallback");
+  if (!img || !fallback) return;
+  if (pictureUrl) {
+    img.src = pictureUrl;
+    img.classList.remove("hidden");
+    fallback.classList.add("hidden");
+  } else {
+    img.removeAttribute("src");
+    img.classList.add("hidden");
+    fallback.classList.remove("hidden");
+  }
+}
+
+async function refreshGoogleUserAvatar(state) {
+  if (!state?.connected) {
+    setUserMenuAvatar("");
+    return;
+  }
+  try {
+    const profile = await invoke("google_calendar_user_profile");
+    setUserMenuAvatar(profile?.picture || "");
+    const status = document.getElementById("user-menu-status");
+    if (status && profile?.email) {
+      status.textContent = `Google: ${profile.email}`;
+    }
+  } catch (_) {
+    setUserMenuAvatar("");
+  }
+}
+
 function updateGoogleButtons(state) {
-  const signIn = document.getElementById("btn-google-sign-in");
-  const sync = document.getElementById("btn-google-sync");
-  const disc = document.getElementById("btn-google-disconnect");
-  const hint = document.getElementById("calendar-client-id-hint");
+  const signIn = document.getElementById("btn-user-google-sign-in");
+  const sync = document.getElementById("btn-user-google-sync");
+  const disc = document.getElementById("btn-user-google-disconnect");
+  const status = document.getElementById("user-menu-status");
   if (!signIn || !sync || !disc) return;
 
   const cfg = Boolean(state.clientIdConfigured);
-  if (hint) {
-    if (!cfg) {
-      hint.classList.remove("hidden");
-      hint.textContent =
-        "Falta o Client ID OAuth: na build define GOOGLE_OAUTH_CLIENT_ID, ou preenche EMBEDDED_GOOGLE_OAUTH_CLIENT_ID em src-tauri/src/google_calendar.rs (é público), ou abre «Pasta de configuração» e cria google_oauth_client_id.txt com uma linha. Usa OAuth Client do tipo Desktop (sem secret), com callback local 127.0.0.1. Guia: docs/GOOGLE-CALENDAR-FASE2.md.";
-    } else {
-      hint.classList.add("hidden");
-      hint.textContent = "";
-    }
+  if (status) {
+    if (!cfg) status.textContent = "Google: Client ID não configurado";
+    else if (!state.connected) status.textContent = "Google: não ligado";
+    else status.textContent = "Google: conta ligada";
   }
 
-  signIn.disabled = !cfg || state.connected;
+  signIn.disabled = !cfg || state.connected || oauthLoginInFlight;
   sync.disabled = !cfg || !state.connected;
   disc.disabled = !cfg || !state.connected;
 
-  const flushQ = document.getElementById("btn-google-flush-queue");
-  if (flushQ) {
-    const show =
-      cfg && state.connected && (state.pendingMutationsCount ?? 0) > 0;
-    flushQ.classList.toggle("hidden", !show);
-    flushQ.disabled = !show;
-  }
-
-  const row = document.getElementById("calendar-actions");
+  const row = document.getElementById("user-menu-dropdown");
   if (row) {
     if (cfg && state.connected) row.classList.add("has-google-session");
     else row.classList.remove("has-google-session");
   }
 
-  const createBlock = document.getElementById("create-google-event-block");
-  if (createBlock) {
-    const show = cfg && state.connected;
-    createBlock.classList.toggle("hidden", !show);
-    createBlock.querySelectorAll("input, button").forEach((el) => {
-      el.disabled = !show;
-    });
-  }
-
   const newBar = document.getElementById("btn-new-gc-event");
   if (newBar) {
-    const show = cfg && state.connected;
+    const show = true;
     newBar.classList.toggle("hidden", !show);
-    newBar.disabled = !show;
+    newBar.disabled = false;
   }
+  void refreshGoogleUserAvatar(state);
 }
 
 /** Atualiza texto da fila offline (barra de definições + dica de sync). */
@@ -1276,11 +1283,11 @@ async function bumpCalendarHintsFromBackend() {
 
 async function refreshCalendarStateLine() {
   const el = document.getElementById("calendar-state-line");
-  if (!el) return;
   try {
     const s = normalizeCalendarState(await invoke("get_calendar_state"));
     updateSyncHint(s);
     updateGoogleButtons(s);
+    if (!el) return;
     const db = s.dbReady ? "Base local (cache) pronta." : "Base local indisponível.";
     if (!s.clientIdConfigured) {
       el.textContent = `${db} Client OAuth não configurado — a grelha usa dados de demonstração.`;
@@ -1385,6 +1392,28 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  const userMenuBtn = document.getElementById("btn-user-menu");
+  const userMenuDropdown = document.getElementById("user-menu-dropdown");
+  userMenuBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isHidden = userMenuDropdown?.classList.contains("hidden");
+    if (!userMenuDropdown || !userMenuBtn) return;
+    userMenuDropdown.classList.toggle("hidden", !isHidden);
+    userMenuBtn.setAttribute("aria-expanded", isHidden ? "true" : "false");
+  });
+  document.addEventListener("click", (e) => {
+    const target = /** @type {HTMLElement | null} */ (e.target);
+    if (!userMenuDropdown || !userMenuBtn) return;
+    if (
+      target &&
+      (userMenuDropdown.contains(target) || userMenuBtn.contains(target))
+    ) {
+      return;
+    }
+    userMenuDropdown.classList.add("hidden");
+    userMenuBtn.setAttribute("aria-expanded", "false");
+  });
+
   document.getElementById("select-theme").addEventListener("change", async (e) => {
     appConfig.theme = e.target.value;
     applyTheme(appConfig.theme);
@@ -1410,27 +1439,45 @@ window.addEventListener("DOMContentLoaded", () => {
     await persistConfig();
   });
 
-  document.getElementById("btn-google-sign-in")?.addEventListener("click", async () => {
+  document.getElementById("btn-user-google-sign-in")?.addEventListener("click", async () => {
+    if (oauthLoginInFlight) return;
+    oauthLoginInFlight = true;
     setCalendarOAuthMessage("");
+    try {
+      const s0 = normalizeCalendarState(await invoke("get_calendar_state"));
+      updateGoogleButtons(s0);
+    } catch (_) {
+      /* ignorar */
+    }
     try {
       await invoke("google_calendar_sign_in");
       setCalendarOAuthMessage(
-        "Sessão iniciada. Usa o botão «Sincronizar agora» logo abaixo para trazer os eventos.",
+        "Sessão iniciada com sucesso.",
       );
       await refreshCalendarStateLine();
       applyGoogleButtonsSignedIn();
-      requestAnimationFrame(() => {
-        document
-          .getElementById("btn-google-sync")
-          ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      });
       await applyGoogleCalendarToGrid();
     } catch (e) {
-      setCalendarOAuthMessage(e?.message || String(e));
+      const msg = e?.message || String(e);
+      if (msg.includes("já há um login em curso")) {
+        setCalendarOAuthMessage(
+          "Login já aberto no navegador. Conclui essa aba ou fecha-a e tenta novamente.",
+        );
+      } else {
+        setCalendarOAuthMessage(msg);
+      }
+    } finally {
+      oauthLoginInFlight = false;
+      try {
+        const s1 = normalizeCalendarState(await invoke("get_calendar_state"));
+        updateGoogleButtons(s1);
+      } catch (_) {
+        /* ignorar */
+      }
     }
   });
 
-  document.getElementById("btn-google-sync")?.addEventListener("click", async () => {
+  document.getElementById("btn-user-google-sync")?.addEventListener("click", async () => {
     setCalendarOAuthMessage("");
     try {
       const n = await invoke("google_calendar_sync");
@@ -1442,21 +1489,7 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  document.getElementById("btn-google-flush-queue")?.addEventListener("click", async () => {
-    setCalendarOAuthMessage("");
-    try {
-      const n = await invoke("google_calendar_flush_offline_queue");
-      await applyGoogleCalendarToGrid();
-      if (n > 0) {
-        setCalendarOAuthMessage(`Fila offline: enviadas ${n} alteração(ões).`);
-      }
-      await bumpCalendarHintsFromBackend();
-    } catch (e) {
-      setCalendarOAuthMessage(e?.message || String(e));
-    }
-  });
-
-  document.getElementById("btn-google-disconnect")?.addEventListener("click", async () => {
+  document.getElementById("btn-user-google-disconnect")?.addEventListener("click", async () => {
     setCalendarOAuthMessage("");
     try {
       await invoke("google_calendar_disconnect");
@@ -1569,7 +1602,17 @@ window.addEventListener("DOMContentLoaded", () => {
         p.location,
         Boolean(eventId),
       );
-      if (!eventId) {
+      if (!isGoogleCalendarActive()) {
+        upsertLocalTask({
+          id: eventId || null,
+          summary: p.summary,
+          allDay: p.allDay,
+          startIso: p.startIso,
+          endIso: p.endIso,
+          description: dl.description,
+          location: dl.location,
+        });
+      } else if (!eventId) {
         await invoke("google_calendar_create_event", {
           payload: {
             summary: p.summary,
@@ -1599,7 +1642,8 @@ window.addEventListener("DOMContentLoaded", () => {
         });
       }
       closeEventEditor();
-      await applyGoogleCalendarToGrid();
+      if (isGoogleCalendarActive()) await applyGoogleCalendarToGrid();
+      else renderAll();
     } catch (e) {
       alert(e?.message || String(e));
       await bumpCalendarHintsFromBackend();
@@ -1609,17 +1653,22 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("gc-menu-delete")?.addEventListener("click", async () => {
     const title =
       document.getElementById("gc-title")?.value?.trim() || "este evento";
-    if (!confirm(`Apagar "${title}" no Google Calendar?`)) return;
+    if (!confirm(`Apagar "${title}"?`)) return;
     try {
       const calendarId =
         document.getElementById("edit-calendar-id")?.value || "primary";
       const eventId = document.getElementById("edit-event-id")?.value;
       if (!eventId) return;
-      await invoke("google_calendar_delete_event", {
-        payload: { calendarId, eventId },
-      });
+      if (!isGoogleCalendarActive()) {
+        deleteLocalTask(eventId);
+      } else {
+        await invoke("google_calendar_delete_event", {
+          payload: { calendarId, eventId },
+        });
+      }
       closeEventEditor();
-      await applyGoogleCalendarToGrid();
+      if (isGoogleCalendarActive()) await applyGoogleCalendarToGrid();
+      else renderAll();
     } catch (e) {
       alert(e?.message || String(e));
       await bumpCalendarHintsFromBackend();

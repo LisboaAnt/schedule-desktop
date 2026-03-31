@@ -58,6 +58,32 @@
             >
               +
             </button>
+            <div class="user-menu-wrap">
+              <button
+                type="button"
+                id="btn-user-menu"
+                class="btn-icon"
+                title="Conta Google"
+                aria-label="Conta Google"
+                aria-expanded="false"
+                aria-controls="user-menu-dropdown"
+              >
+                <img id="user-menu-avatar" class="user-menu-avatar hidden" alt="Foto do utilizador" />
+                <span id="user-menu-avatar-fallback" class="user-menu-avatar-fallback" aria-hidden="true">👤</span>
+              </button>
+              <div id="user-menu-dropdown" class="user-menu-dropdown hidden" role="menu" aria-label="Menu da conta">
+                <p id="user-menu-status" class="user-menu-status">Google: não ligado</p>
+                <button type="button" class="user-menu-item" id="btn-user-google-sign-in" role="menuitem">
+                  Ligar conta
+                </button>
+                <button type="button" class="user-menu-item" id="btn-user-google-sync" role="menuitem">
+                  Sincronizar
+                </button>
+                <button type="button" class="user-menu-item user-menu-item--danger" id="btn-user-google-disconnect" role="menuitem">
+                  Terminar sessão
+                </button>
+              </div>
+            </div>
             <button
               type="button"
               id="btn-settings"
@@ -139,7 +165,7 @@
         </div>
 
         <p class="hint" id="sync-hint">
-          Dados de demonstração. Google Calendar em desenvolvimento (Fase 2).
+          Modo local ativo: cria e edita eventos sem login. Liga Google para sincronização na nuvem.
         </p>
       </section>
 
@@ -226,22 +252,9 @@
               <article class="settings-card settings-card--wide">
                 <div class="settings-card-head">
                   <h3 class="settings-card-title">Google Calendar</h3>
-                  <p class="settings-card-desc">Liga a conta, sincroniza eventos e gere a fila offline.</p>
+                  <p class="settings-card-desc">Define apenas o intervalo de sincronização automática.</p>
                 </div>
                 <div class="settings-card-body">
-                  <p class="settings-status" id="calendar-state-line">A carregar estado…</p>
-                  <p class="settings-callout settings-callout--warn hidden" id="calendar-client-id-hint"></p>
-                  <p class="settings-oauth-msg" id="calendar-oauth-msg" aria-live="polite"></p>
-                  <div class="settings-actions settings-actions--grid" id="calendar-actions">
-                    <button type="button" class="btn-secondary" id="btn-google-sign-in">Ligar conta</button>
-                    <button type="button" class="btn-secondary btn-sync-primary" id="btn-google-sync">Sincronizar</button>
-                    <button type="button" class="btn-secondary hidden" id="btn-google-flush-queue" title="Envia alterações em fila sem descarregar o calendário">
-                      Fila offline
-                    </button>
-                    <button type="button" class="btn-secondary btn-secondary-danger" id="btn-google-disconnect">
-                      Terminar sessão
-                    </button>
-                  </div>
                   <label class="field settings-field settings-field--tight">
                     <span class="settings-label">Sincronização automática</span>
                     <select id="select-auto-sync" class="settings-input" title="Pedidos à API Google só com sessão ligada">
@@ -255,18 +268,6 @@
                   <p class="settings-callout settings-callout--subtle">
                     Ao voltares à janela, a agenda pode sincronizar no máximo de 90 em 90 segundos (com sessão Google ativa).
                   </p>
-                </div>
-              </article>
-
-              <article class="settings-card create-google-event-block hidden" id="create-google-event-block">
-                <div class="settings-card-head">
-                  <h3 class="settings-card-title">Novo evento</h3>
-                  <p class="settings-card-desc">Editor com título, datas, local e convidados (estilo Google Calendar).</p>
-                </div>
-                <div class="settings-card-body">
-                  <button type="button" class="btn-secondary btn-sync-primary btn-secondary--block" id="btn-open-gc-editor">
-                    Abrir editor de evento
-                  </button>
                 </div>
               </article>
 

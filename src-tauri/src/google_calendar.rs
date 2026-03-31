@@ -36,8 +36,10 @@ const KEYRING_USER_REFRESH: &str = "google_oauth_refresh_token";
 /// Ficheiro na pasta de dados local (ao lado do SQLite). O keyring no Windows em dev falha por vezes; o ficheiro garante persistência.
 const REFRESH_TOKEN_FILENAME: &str = "google_oauth_refresh_token";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-/// Leitura + criação/edição de eventos. Após mudar o escopo, volta a **Ligar conta Google**.
-const SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
+/// Leitura + criação/edição de eventos + perfil (foto/e-mail). Após mudar o escopo, volta a **Ligar conta Google**.
+/// Usa `openid profile email` (OIDC) em vez dos URLs `userinfo.*` — evita erros intermitentes na página de consentimento.
+const SCOPE: &str = "openid email profile https://www.googleapis.com/auth/calendar.events";
+const USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/userinfo";
 const PRIMARY: &str = "primary";
 /// Prefixo do parâmetro `state` OAuth da **app Agenda**.
 pub const OAUTH_STATE_PREFIX: &str = "agenda_";
@@ -63,6 +65,14 @@ struct TokenJson {
     #[allow(dead_code)]
     #[serde(alias = "expiresIn")]
     expires_in: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleUserProfile {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub picture: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -289,8 +299,99 @@ fn wait_for_oauth_code_loopback(listener: &TcpListener, expected_state: &str) ->
                         _ => {}
                     }
                 }
-                let ok_html = "<html><body><h3>Podes voltar para a app Agenda.</h3><script>window.close&&window.close()</script></body></html>";
-                let fail_html = "<html><body><h3>Falha no OAuth. Volta para a Agenda e tenta novamente.</h3></body></html>";
+                let ok_html = r#"<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agenda — Login concluído</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #6b8afd22, transparent 60%),
+                  radial-gradient(900px 500px at 120% 110%, #41d1ff22, transparent 55%),
+                  #0b1020;
+      color: #e8ecff;
+    }
+    .card {
+      width: min(560px, 92vw);
+      background: #121936;
+      border: 1px solid #2a356a;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px #00000055;
+      padding: 28px 24px;
+      text-align: center;
+    }
+    .ok {
+      width: 52px; height: 52px; margin: 0 auto 14px;
+      border-radius: 50%;
+      display: grid; place-items: center;
+      background: #1f8f4e33; border: 1px solid #41d17d66;
+      color: #7dffb2; font-size: 28px; font-weight: 700;
+    }
+    h1 { margin: 0 0 10px; font-size: 22px; line-height: 1.3; }
+    p { margin: 0; color: #b7c0ea; line-height: 1.5; }
+    .muted { margin-top: 10px; font-size: 13px; opacity: 0.9; }
+    button {
+      margin-top: 18px;
+      border: 1px solid #3a4c95;
+      background: #1a2550;
+      color: #e8ecff;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { background: #22306a; }
+  </style>
+</head>
+<body>
+  <main class="card" role="main" aria-live="polite">
+    <div class="ok">✓</div>
+    <h1>Login com Google concluído</h1>
+    <p>Podes voltar para a app Agenda. Esta aba pode ser fechada.</p>
+    <p class="muted">Se a app não atualizar automaticamente, clica em “Sincronizar”.</p>
+    <button type="button" onclick="window.close()">Fechar aba</button>
+  </main>
+  <script>setTimeout(function(){ try{ window.close(); }catch(_){} }, 1200);</script>
+</body>
+</html>"#;
+                let fail_html = r#"<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agenda — Falha no login</title>
+  <style>
+    body {
+      margin: 0; min-height: 100dvh; display: grid; place-items: center;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: #120d1a; color: #f8e9ee;
+    }
+    .card {
+      width: min(560px, 92vw);
+      background: #231126;
+      border: 1px solid #5a2b56;
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+    }
+    h1 { margin: 0 0 10px; font-size: 22px; }
+    p { margin: 0; color: #f3cdd8; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main class="card" role="main" aria-live="polite">
+    <h1>Falha no login Google</h1>
+    <p>Volta para a app Agenda e tenta novamente.</p>
+  </main>
+</body>
+</html>"#;
                 let (status_line, body, result) = if let Some(err) = oauth_error {
                     let detail = err_desc.unwrap_or_default();
                     let msg = if detail.is_empty() { err } else { format!("{err}: {detail}") };
@@ -431,6 +532,30 @@ pub async fn refresh_access_token(_app: &AppHandle, refresh: &str) -> Result<Str
         .map_err(|e| format!("JSON token: {e}"))?;
 
     Ok(tj.access_token)
+}
+
+pub async fn get_google_user_profile(app: &AppHandle) -> Result<GoogleUserProfile, String> {
+    let refresh = get_refresh_token(app)?;
+    let access = refresh_access_token(app, &refresh).await?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(USERINFO_URL)
+        .bearer_auth(access)
+        .send()
+        .await
+        .map_err(|e| format!("Google userinfo: {e}"))?;
+    if !res.status().is_success() {
+        let body = res.text().await.unwrap_or_default();
+        return Err(format!("Google userinfo falhou: {body}"));
+    }
+    let profile: GoogleUserProfile = res
+        .json()
+        .await
+        .map_err(|e| format!("Google userinfo JSON: {e}"))?;
+    Ok(profile)
 }
 
 /// Anexa instruções quando a API devolve 403 por escopo (token antigo só de leitura, etc.).

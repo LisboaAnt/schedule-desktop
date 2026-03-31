@@ -311,6 +311,82 @@ input,
   color: var(--accent);
 }
 
+.user-menu-wrap {
+  position: relative;
+}
+
+#btn-user-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.user-menu-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-menu-avatar-fallback {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 210px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgb(var(--c-surface) / var(--fill-a, 1));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-menu-status {
+  margin: 0 0 2px;
+  padding: 0 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.user-menu-item {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.user-menu-item:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.user-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.user-menu-item--danger:hover {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.12);
+}
+
 /* Texto "Agenda" no lugar do ⚙ quando estás em Definições */
 .btn-icon.btn-settings-as-agenda {
   width: auto;
