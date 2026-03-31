@@ -1,6 +1,21 @@
 # Gera instaladores Windows (.msi WiX + .exe NSIS) e publica na aba Releases do GitHub.
 # Só corre quando disparas manualmente (Actions → Release (Windows) → Run workflow).
-# Requisito: Settings → Actions → General → Workflow permissions → "Read and write".
+#
+# Se aparecer "Resource not accessible by integration" ao criar a release, mesmo com
+# "Read and write permissions" no repo:
+#
+# 1) Secret RELEASE_TOKEN (recomendado): cria um PAT pessoal com permissão de repositório:
+#    GitHub → Settings (da tua conta) → Developer settings → Personal access tokens
+#    → classic: scope "repo" OU fine-grained: este repo + Contents "Read and write".
+#    Depois: repo schedule-desktop → Settings → Secrets and variables → Actions →
+#    New repository secret → nome: RELEASE_TOKEN, valor: o PAT.
+#    O passo abaixo usa RELEASE_TOKEN se existir; senão usa GITHUB_TOKEN.
+#
+# 2) Organização: github.com/orgs/ORG/settings/actions — "Workflow permissions" não pode
+#    forçar só leitura em todos os repos (isso anula o do repo).
+#
+# 3) Rulesets / proteção de tags: Settings → Rules → Rulesets — ver se criação de tags
+#    tipo v* está bloqueada para GitHub Actions.
 #
 # O passo mais lento é compilar Rust em release + empacotar. O rust-cache acelera runs seguintes
 # (mesmo Cargo.lock). Para só um instalador, podes usar em `args`: `-b msi` ou `-b nsis`.
@@ -16,6 +31,8 @@ permissions:
 jobs:
   publish:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -41,7 +58,7 @@ jobs:
       - name: Build and upload to GitHub Release
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: Agenda v__VERSION__
@@ -59,3 +76,15 @@ jobs:
           uploadUpdaterJson: false
           uploadWorkflowArtifacts: true
           args: --ci
+
+      # Se o passo anterior falhar só na API do GitHub (permissões), os ficheiros já existem no runner.
+      - name: Artefacto de reserva (MSI + setup .exe)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agenda-windows-installers
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: ignore
+          retention-days: 14
