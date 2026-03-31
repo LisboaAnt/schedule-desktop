@@ -38,6 +38,16 @@ const JS_WALLPAPER_LEAVE: &str = "document.documentElement.classList.remove('wal
 #[cfg(windows)]
 const JS_WALLPAPER_REPOSITION_PILL: &str = "requestAnimationFrame(function(){requestAnimationFrame(function(){if(window.__agendaRepositionRestorePill)window.__agendaRepositionRestorePill();});});";
 
+/// Preferências enviadas pelo frontend ao ir para trás (evita ler `config.json` desatualizado).
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct SendWallpaperChromeOpts {
+    #[serde(default)]
+    window_rounded_corners: Option<bool>,
+    #[serde(default)]
+    window_show_border: Option<bool>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -603,7 +613,10 @@ fn reset_saved_window_layout(app: tauri::AppHandle) -> Result<(), String> {
 /// No Windows: ancora atrás dos ícones do ambiente de trabalho, esconde a barra (CSS) e abre a pílula “voltar”.
 /// Comando `async` para evitar deadlock do Webview2 ao criar a segunda janela.
 #[tauri::command]
-async fn send_window_to_back(app: tauri::AppHandle) -> Result<(), String> {
+async fn send_window_to_back(
+    app: tauri::AppHandle,
+    chrome: SendWallpaperChromeOpts,
+) -> Result<(), String> {
     #[cfg(windows)]
     {
         let main = app
@@ -613,12 +626,11 @@ async fn send_window_to_back(app: tauri::AppHandle) -> Result<(), String> {
             .eval(JS_WALLPAPER_ENTER)
             .map_err(|e| e.to_string())?;
         let cfg = read_config_file(&app).unwrap_or_default();
-        windows_desktop::set_behind_icons(
-            &main,
-            true,
-            cfg.window_rounded_corners,
-            cfg.window_show_border,
-        )?;
+        let rounded = chrome
+            .window_rounded_corners
+            .unwrap_or(cfg.window_rounded_corners);
+        let border = chrome.window_show_border.unwrap_or(cfg.window_show_border);
+        windows_desktop::set_behind_icons(&main, true, rounded, border)?;
         DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
 
         if let Some(p) = app.get_webview_window("restore-pill") {
@@ -648,6 +660,7 @@ async fn send_window_to_back(app: tauri::AppHandle) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
+        let _ = chrome;
         send_main_window_back(&app)
     }
 }

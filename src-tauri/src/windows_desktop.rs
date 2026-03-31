@@ -14,7 +14,9 @@ use windows::Win32::Graphics::Dwm::{
     DWM_WINDOW_CORNER_PREFERENCE,
 };
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, ScreenToClient, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    CreateRectRgn, DeleteObject, GetMonitorInfoW, MonitorFromWindow, RedrawWindow, ScreenToClient,
+    SetWindowRgn, HGDIOBJ, MONITORINFO, MONITOR_DEFAULTTONEAREST, RDW_FRAME, RDW_INVALIDATE,
+    RDW_UPDATENOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, IsZoomed,
@@ -164,7 +166,60 @@ unsafe fn set_dwm_border_visible(hwnd: HWND, show: bool) {
     );
 }
 
-/// Cantos e borda ao nível do DWM (necessário quando a janela é filha do WorkerW — o CSS do WebView não molda o HWND).
+/// O DWM costuma ignorar `DWMWCP_DONOTROUND` em filhos do WorkerW; uma região rectangular força cantos retos.
+unsafe fn apply_window_region_for_corners(hwnd: HWND, rounded_corners: bool) -> Result<(), String> {
+    if rounded_corners {
+        let _ = SetWindowRgn(hwnd, None, true);
+        return Ok(());
+    }
+    let r = outer_rect_screen(hwnd)?;
+    let w = r.right - r.left;
+    let h = r.bottom - r.top;
+    if w <= 0 || h <= 0 {
+        return Err("Dimensão da janela inválida.".to_string());
+    }
+    let hrgn = CreateRectRgn(0, 0, w, h);
+    if hrgn.is_invalid() {
+        return Err("CreateRectRgn falhou.".to_string());
+    }
+    let ok = SetWindowRgn(hwnd, Some(hrgn), true);
+    if ok == 0 {
+        let _ = DeleteObject(HGDIOBJ(hrgn.0));
+        return Err("SetWindowRgn falhou.".to_string());
+    }
+    Ok(())
+}
+
+unsafe fn redraw_window_frame(hwnd: HWND) {
+    let _ = RedrawWindow(
+        Some(hwnd),
+        None,
+        None,
+        RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW,
+    );
+}
+
+/// DWM + região da janela (WorkerW) + redesenho.
+unsafe fn apply_wallpaper_hwnd_chrome(
+    hwnd: HWND,
+    rounded_corners: bool,
+    show_border: bool,
+) -> Result<(), String> {
+    set_dwm_corner_preference(
+        hwnd,
+        if rounded_corners {
+            DWMWCP_ROUND
+        } else {
+            DWMWCP_DONOTROUND
+        },
+    );
+    set_dwm_border_visible(hwnd, show_border);
+    apply_window_region_for_corners(hwnd, rounded_corners)?;
+    redraw_window_frame(hwnd);
+    Ok(())
+}
+
+/// Cantos e borda ao nível do DWM + região (o CSS não molda o HWND no modo wallpaper).
 pub fn apply_wallpaper_dwm_style<R: Runtime>(
     window: &WebviewWindow<R>,
     rounded_corners: bool,
@@ -172,23 +227,17 @@ pub fn apply_wallpaper_dwm_style<R: Runtime>(
 ) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     unsafe {
-        set_dwm_corner_preference(
-            hwnd,
-            if rounded_corners {
-                DWMWCP_ROUND
-            } else {
-                DWMWCP_DONOTROUND
-            },
-        );
-        set_dwm_border_visible(hwnd, show_border);
+        apply_wallpaper_hwnd_chrome(hwnd, rounded_corners, show_border)?;
     }
     Ok(())
 }
 
 fn reset_top_level_dwm(hwnd: HWND) {
     unsafe {
+        let _ = SetWindowRgn(hwnd, None, true);
         set_dwm_corner_preference(hwnd, DWMWCP_DEFAULT);
         set_dwm_border_visible(hwnd, true);
+        redraw_window_frame(hwnd);
     }
 }
 
@@ -206,15 +255,7 @@ pub fn set_behind_icons<R: Runtime>(
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, Some(parent)).map_err(|e| format!("SetParent: {e}"))?;
             move_as_child_at_screen_rect(hwnd, parent, &rect)?;
-            set_dwm_corner_preference(
-                hwnd,
-                if rounded_corners {
-                    DWMWCP_ROUND
-                } else {
-                    DWMWCP_DONOTROUND
-                },
-            );
-            set_dwm_border_visible(hwnd, show_border);
+            apply_wallpaper_hwnd_chrome(hwnd, rounded_corners, show_border)?;
         } else {
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, None).map_err(|e| format!("SetParent: {e}"))?;

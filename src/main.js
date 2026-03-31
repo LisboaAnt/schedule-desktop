@@ -1335,7 +1335,12 @@ window.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-send-back").addEventListener("click", async () => {
     try {
-      await invoke("send_window_to_back");
+      await invoke("send_window_to_back", {
+        chrome: {
+          windowRoundedCorners: appConfig.windowRoundedCorners !== false,
+          windowShowBorder: appConfig.windowShowBorder !== false,
+        },
+      });
     } catch (e) {
       alert(e?.message || String(e));
     }

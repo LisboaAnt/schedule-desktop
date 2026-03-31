@@ -576,3 +576,20 @@ input.gc-field-pill[type="time"] {
   opacity: 0.45;
   pointer-events: none;
 }
+
+/* Cantos retos da janela (body.window-sharp-corners) — sem alterar botões circulares / pontos de cor. */
+body.window-sharp-corners .gc-editor-dialog,
+body.window-sharp-corners .gc-btn-save,
+body.window-sharp-corners .gc-more-details summary,
+body.window-sharp-corners .gc-more-menu,
+body.window-sharp-corners .gc-more-menu button,
+body.window-sharp-corners .gc-field-pill,
+body.window-sharp-corners input.gc-field-pill[type="date"],
+body.window-sharp-corners input.gc-field-pill[type="time"],
+body.window-sharp-corners .gc-select,
+body.window-sharp-corners .gc-notify-num,
+body.window-sharp-corners .gc-desc-tool,
+body.window-sharp-corners .gc-textarea,
+body.window-sharp-corners .gc-guest-input {
+  border-radius: 0;
+}
