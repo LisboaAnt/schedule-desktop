@@ -196,40 +196,47 @@ fn start_background_google_sync_worker(app: &tauri::AppHandle) {
     });
 }
 
+/// Reancora a janela ao `WorkerW` e força visibilidade (chamar na thread principal).
+#[cfg(windows)]
+fn wallpaper_try_reanchor(app: &tauri::AppHandle) {
+    if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+        return;
+    }
+    let cfg = read_config_file(app).unwrap_or_default();
+    if !cfg.desktop_behind_icons {
+        return;
+    }
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = main.show();
+    let _ = main.unminimize();
+    if let Err(e) = windows_desktop::set_behind_icons(
+        &main,
+        true,
+        cfg.window_rounded_corners,
+        cfg.window_show_border,
+    ) {
+        eprintln!("[agenda] reancorar modo fundo: {e}");
+    }
+    let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+}
+
 /// O Windows pode recriar a camada do ambiente de trabalho (`WorkerW` / Explorer).
-/// Nesse caso a janela anexada com `SetParent` pode ficar invisível ou «perdida».
-/// Reaplica periodicamente o ancoramento enquanto o modo wallpaper estiver ativo.
+/// Reaplica o ancoramento com frequência para a janela não «sumir» até saíres do modo.
 #[cfg(windows)]
 fn start_wallpaper_layer_watchdog(app: &tauri::AppHandle) {
     let h = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(90)).await;
+            tokio::time::sleep(Duration::from_secs(8)).await;
             if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
                 continue;
             }
             let app = h.clone();
             let app_for_cb = app.clone();
             let _ = app.run_on_main_thread(move || {
-                let cfg = read_config_file(&app_for_cb).unwrap_or_default();
-                if !cfg.desktop_behind_icons {
-                    return;
-                }
-                let Some(main) = app_for_cb.get_webview_window("main") else {
-                    return;
-                };
-                if !main.is_visible().unwrap_or(true) {
-                    let _ = main.show();
-                }
-                if let Err(e) = windows_desktop::set_behind_icons(
-                    &main,
-                    true,
-                    cfg.window_rounded_corners,
-                    cfg.window_show_border,
-                ) {
-                    eprintln!("[agenda] reancorar modo fundo: {e}");
-                }
-                let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+                wallpaper_try_reanchor(&app_for_cb);
             });
         }
     });
@@ -938,6 +945,15 @@ fn restore_desktop_wallpaper_mode(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // Com modo «atrás dos ícones» ativo, não roubar foco nem trazer à frente:
+            // só reancorar ao WorkerW (segunda instância = reforço, não sair do modo).
+            #[cfg(windows)]
+            {
+                if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+                    wallpaper_try_reanchor(app);
+                    return;
+                }
+            }
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
                 let _ = w.set_focus();
@@ -1043,7 +1059,13 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, RunEvent::Resumed) {
-                clamp_main_window_to_visible_workspace(app);
+                let h = app.clone();
+                let h_cb = h.clone();
+                let _ = h.run_on_main_thread(move || {
+                    clamp_main_window_to_visible_workspace(&h_cb);
+                    #[cfg(windows)]
+                    wallpaper_try_reanchor(&h_cb);
+                });
             }
         });
 }

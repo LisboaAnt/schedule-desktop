@@ -19,9 +19,10 @@ use windows::Win32::Graphics::Gdi::{
     RDW_UPDATENOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, IsZoomed,
-    SendMessageTimeoutW, SetParent, SetWindowPos, SMTO_NORMAL, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE, HWND_TOP,
+    FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, IsIconic, IsZoomed,
+    SendMessageTimeoutW, SetParent, SetWindowPos, ShowWindow, SMTO_NORMAL, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+    SW_RESTORE, SW_SHOWNOACTIVATE, HWND_TOP,
 };
 
 fn hwnd_or_default(r: windows::core::Result<HWND>) -> HWND {
@@ -190,6 +191,14 @@ unsafe fn apply_window_region_for_corners(hwnd: HWND, rounded_corners: bool) -> 
     Ok(())
 }
 
+/// Garante que a janela não fica minimizada nem oculta após `SetParent` (Explorer pode alterar estado).
+unsafe fn ensure_wallpaper_window_visible(hwnd: HWND) {
+    if IsIconic(hwnd).as_bool() {
+        let _ = ShowWindow(hwnd, SW_RESTORE);
+    }
+    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+}
+
 unsafe fn redraw_window_frame(hwnd: HWND) {
     let _ = RedrawWindow(
         Some(hwnd),
@@ -256,6 +265,7 @@ pub fn set_behind_icons<R: Runtime>(
             SetParent(hwnd, Some(parent)).map_err(|e| format!("SetParent: {e}"))?;
             move_as_child_at_screen_rect(hwnd, parent, &rect)?;
             apply_wallpaper_hwnd_chrome(hwnd, rounded_corners, show_border)?;
+            ensure_wallpaper_window_visible(hwnd);
         } else {
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, None).map_err(|e| format!("SetParent: {e}"))?;
