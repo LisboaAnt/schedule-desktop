@@ -1,6 +1,6 @@
 [package]
 name = "calendario-app"
-version = "0.1.0"
+version = "0.1.1"
 description = "Calendário desktop (widget + app) com sync Google Calendar"
 authors = ["Calendário App Contributors"]
 edition = "2021"
