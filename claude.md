@@ -30,6 +30,7 @@ Agenda / calendário para **Windows 11** com:
 | [docs/ARQUITETURA-E-STACK.md](./docs/ARQUITETURA-E-STACK.md) | Stack recomendada (Tauri + WebView2), módulos, sync, otimizações, segurança |
 | [CHANGELOG.md](./CHANGELOG.md) | Alterações por versão |
 | [docs/MULTI-MONITOR.md](./docs/MULTI-MONITOR.md) | Vários ecrãs, estado da janela, modo atrás dos ícones |
+| [docs/ROADMAP-WORKERW-AB.md](./docs/ROADMAP-WORKERW-AB.md) | Roadmap tarefas: endurecer WorkerW (A) + duas superfícies (B) |
 | [docs/DEPENDENCIAS.md](./docs/DEPENDENCIAS.md) | Crates Rust e npm — auditoria |
 | [docs/RELEASE.md](./docs/RELEASE.md) | Instaladores no GitHub Releases |
 | [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) | Pacto de Contribuinte (comunidade) |

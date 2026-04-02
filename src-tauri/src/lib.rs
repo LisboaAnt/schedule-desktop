@@ -21,7 +21,7 @@ mod windows_autostart;
 mod windows_desktop;
 
 #[cfg(windows)]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[cfg(windows)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -29,6 +29,25 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 /// Janela principal está ancorada atrás dos ícones do ambiente de trabalho (WorkerW).
 #[cfg(windows)]
 static DESKTOP_WALLPAPER_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Contadores de sessão para `wallpaper_try_reanchor` (diagnóstico WorkerW).
+#[cfg(windows)]
+static REANCHOR_COUNT_WATCHDOG: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static REANCHOR_COUNT_SINGLE_INSTANCE: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static REANCHOR_COUNT_RESUMED: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(windows)]
+fn bump_reanchor_count(origin: &'static str) -> u64 {
+    let c = match origin {
+        "watchdog" => &REANCHOR_COUNT_WATCHDOG,
+        "single_instance" => &REANCHOR_COUNT_SINGLE_INSTANCE,
+        "resumed" => &REANCHOR_COUNT_RESUMED,
+        _ => return 0,
+    };
+    c.fetch_add(1, Ordering::Relaxed) + 1
+}
 
 /// Janela-pílula: quadrado ~ícone do ambiente de trabalho (lógico).
 #[cfg(windows)]
@@ -198,7 +217,7 @@ fn start_background_google_sync_worker(app: &tauri::AppHandle) {
 
 /// Reancora a janela ao `WorkerW` e força visibilidade (chamar na thread principal).
 #[cfg(windows)]
-fn wallpaper_try_reanchor(app: &tauri::AppHandle) {
+fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
     if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
         return;
     }
@@ -207,8 +226,25 @@ fn wallpaper_try_reanchor(app: &tauri::AppHandle) {
         return;
     }
     let Some(main) = app.get_webview_window("main") else {
+        if windows_desktop::workerw_debug_enabled() {
+            eprintln!(
+                "[agenda] workerw reanchor origin={origin} skip=no_main_window wallpaper_active={}",
+                DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst)
+            );
+        }
         return;
     };
+
+    let n = bump_reanchor_count(origin);
+    if windows_desktop::workerw_debug_enabled() {
+        let vis = main.is_visible().unwrap_or(false);
+        let min = main.is_minimized().unwrap_or(false);
+        eprintln!(
+            "[agenda] workerw reanchor origin={origin} n={n} desktop_behind_icons={} main_visible={} main_minimized={}",
+            cfg.desktop_behind_icons, vis, min
+        );
+    }
+
     let _ = main.show();
     let _ = main.unminimize();
     if let Err(e) = windows_desktop::set_behind_icons(
@@ -236,7 +272,7 @@ fn start_wallpaper_layer_watchdog(app: &tauri::AppHandle) {
             let app = h.clone();
             let app_for_cb = app.clone();
             let _ = app.run_on_main_thread(move || {
-                wallpaper_try_reanchor(&app_for_cb);
+                wallpaper_try_reanchor(&app_for_cb, "watchdog");
             });
         }
     });
@@ -950,7 +986,7 @@ pub fn run() {
             #[cfg(windows)]
             {
                 if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
-                    wallpaper_try_reanchor(app);
+                    wallpaper_try_reanchor(app, "single_instance");
                     return;
                 }
             }
@@ -1064,7 +1100,7 @@ pub fn run() {
                 let _ = h.run_on_main_thread(move || {
                     clamp_main_window_to_visible_workspace(&h_cb);
                     #[cfg(windows)]
-                    wallpaper_try_reanchor(&h_cb);
+                    wallpaper_try_reanchor(&h_cb, "resumed");
                 });
             }
         });

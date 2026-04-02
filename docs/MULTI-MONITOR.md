@@ -22,6 +22,17 @@ O código comenta que, após `SetParent` ao **WorkerW**, o Windows pode recoloca
 
 Se algo falhar nesse modo num arranjo específico, usa **«Repor layout da janela»** nas definições ou desativa o modo atrás dos ícones.
 
+### Diagnóstico (logs WorkerW)
+
+Para investigar sumiços, flicker ou reancoragens em excesso:
+
+1. Define a variável de ambiente **`AGENDA_WORKERW_DEBUG=1`** antes de arrancar a app (ou usa um build **debug**, que também activa estes logs).
+2. No terminal / consola onde corre o executável, procura linhas com prefixo **`[agenda] workerw`**, por exemplo:
+   - `workerw reanchor origin=watchdog|single_instance|resumed` — origem da reancoragem e contador `n` por origem;
+   - `set_behind_icons` — `parent_before` / `parent_after` e se coincidem com o WorkerW esperado;
+   - `WorkerW encontrado` vs `WorkerW não encontrado`.
+3. Reprodução típica: activa **atrás dos ícones**, muda o **wallpaper** ou activa **slideshow**, observa se a janela desaparece ou pisca; copia o trecho de log correspondente para o relatório.
+
 ## Pílula de restauro
 
 `physical_position_for_pill_beside_main` já limita a posição ao **retângulo virtual** (`SM_XVIRTUALSCREEN`, etc.) para a pílula não sair do espaço dos ecrãs.

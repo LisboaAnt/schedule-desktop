@@ -47,3 +47,4 @@ Resumo alinhado a [PLANEJAMENTO.md](./PLANEJAMENTO.md) e [TAREFAS-POR-CICLO.md](
 
 - Checklist detalhada: [TAREFAS-POR-CICLO.md](./TAREFAS-POR-CICLO.md)
 - Stack e módulos: [ARQUITETURA-E-STACK.md](./ARQUITETURA-E-STACK.md)
+- Modo **atrás dos ícones** (WorkerW): roadmap tarefas **A + B** — [ROADMAP-WORKERW-AB.md](./ROADMAP-WORKERW-AB.md)

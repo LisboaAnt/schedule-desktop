@@ -19,11 +19,28 @@ use windows::Win32::Graphics::Gdi::{
     RDW_UPDATENOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, FindWindowW, GetClassNameW, GetSystemMetrics, GetWindowRect, IsIconic, IsZoomed,
-    SendMessageTimeoutW, SetParent, SetWindowPos, ShowWindow, SMTO_NORMAL, SM_CXVIRTUALSCREEN,
+    FindWindowExW, FindWindowW, GetClassNameW, GetParent, GetSystemMetrics, GetWindowRect, IsIconic,
+    IsZoomed, SendMessageTimeoutW, SetParent, SetWindowPos, ShowWindow, SMTO_NORMAL, SM_CXVIRTUALSCREEN,
     SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_FRAMECHANGED, SWP_NOACTIVATE,
     SW_RESTORE, SW_SHOWNOACTIVATE, HWND_TOP,
 };
+
+/// Debug do modo WorkerW: `debug` build ou `AGENDA_WORKERW_DEBUG=1`.
+pub(crate) fn workerw_debug_enabled() -> bool {
+    cfg!(debug_assertions)
+        || std::env::var("AGENDA_WORKERW_DEBUG")
+            .ok()
+            .as_deref()
+            == Some("1")
+}
+
+fn hwnd_usize(hwnd: HWND) -> usize {
+    hwnd.0 as usize
+}
+
+fn get_parent_hwnd(hwnd: HWND) -> HWND {
+    unsafe { GetParent(hwnd).unwrap_or_default() }
+}
 
 fn hwnd_or_default(r: windows::core::Result<HWND>) -> HWND {
     r.unwrap_or_default()
@@ -32,6 +49,9 @@ fn hwnd_or_default(r: windows::core::Result<HWND>) -> HWND {
 unsafe fn workerw_behind_icons() -> Option<HWND> {
     let progman = FindWindowW(w!("Progman"), None).ok()?;
     if progman.is_invalid() {
+        if workerw_debug_enabled() {
+            eprintln!("[agenda] workerw: Progman não encontrado ou HWND inválido");
+        }
         return None;
     }
 
@@ -60,11 +80,20 @@ unsafe fn workerw_behind_icons() -> Option<HWND> {
             if n > 0 {
                 let name = String::from_utf16_lossy(&buf[..n as usize]);
                 if name == "WorkerW" {
+                    if workerw_debug_enabled() {
+                        eprintln!(
+                            "[agenda] workerw: WorkerW encontrado hwnd={}",
+                            hwnd_usize(child)
+                        );
+                    }
                     return Some(child);
                 }
             }
         }
         child = hwnd_or_default(FindWindowExW(Some(progman), Some(child), None, None));
+    }
+    if workerw_debug_enabled() {
+        eprintln!("[agenda] workerw: WorkerW não encontrado (varredura Progman terminou)");
     }
     None
 }
@@ -259,16 +288,66 @@ pub fn set_behind_icons<R: Runtime>(
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     unsafe {
         if enable {
+            let parent_before = get_parent_hwnd(hwnd);
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw set_behind_icons enable=true hwnd={} parent_before={}",
+                    hwnd_usize(hwnd),
+                    hwnd_usize(parent_before)
+                );
+            }
             let parent = workerw_behind_icons()
                 .ok_or_else(|| "Camada WorkerW não encontrada.".to_string())?;
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw: expected_parent(WorkerW)={}",
+                    hwnd_usize(parent)
+                );
+            }
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, Some(parent)).map_err(|e| format!("SetParent: {e}"))?;
+            let parent_after = get_parent_hwnd(hwnd);
+            if workerw_debug_enabled() {
+                let ok = parent_after == parent;
+                eprintln!(
+                    "[agenda] workerw: após SetParent parent_after={} match_expected={}",
+                    hwnd_usize(parent_after),
+                    ok
+                );
+            }
             move_as_child_at_screen_rect(hwnd, parent, &rect)?;
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw: após move_as_child IsIconic={}",
+                    IsIconic(hwnd).as_bool()
+                );
+            }
             apply_wallpaper_hwnd_chrome(hwnd, rounded_corners, show_border)?;
             ensure_wallpaper_window_visible(hwnd);
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw: após ensure_visible IsIconic={}",
+                    IsIconic(hwnd).as_bool()
+                );
+            }
         } else {
+            let parent_before = get_parent_hwnd(hwnd);
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw set_behind_icons enable=false hwnd={} parent_before={}",
+                    hwnd_usize(hwnd),
+                    hwnd_usize(parent_before)
+                );
+            }
             let rect = screen_rect_for_reparent(hwnd)?;
             SetParent(hwnd, None).map_err(|e| format!("SetParent: {e}"))?;
+            let parent_after = get_parent_hwnd(hwnd);
+            if workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw: após SetParent(None) parent_after={}",
+                    hwnd_usize(parent_after)
+                );
+            }
             move_top_level_at_screen_rect(hwnd, &rect)?;
             reset_top_level_dwm(hwnd);
         }
