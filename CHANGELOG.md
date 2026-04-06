@@ -21,3 +21,12 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 ### Notas
 
 - Reiniciar a app após alterar `tauri.conf.json` (transparência nativa).
+
+## [0.1.2] — 2026-04-06
+
+### Alterado
+
+- Modo «atrás dos ícones»: após ancorar ao WorkerW, a janela pode alinhar-se à área útil do monitor (`snap`); opt-out com `AGENDA_WALLPAPER_SKIP_WORK_AREA_SNAP=1`. Ver [MULTI-MONITOR.md](docs/MULTI-MONITOR.md).
+- Persistência da geometria da janela: gravação do estado após estabilizar o layout no arranque e gravação periódica (5 min) para reduzir desvio após crash/vigia.
+- Vigia (`agenda-watchdog`): variáveis `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS` e `AGENDA_WATCHDOG_RELUNCH_ON_ZERO`; documentação em [WATCHDOG.md](docs/WATCHDOG.md) e [COMO-RODAR.md](docs/COMO-RODAR.md).
+- [RELEASE.md](docs/RELEASE.md): endpoint do updater, `latest.json`, checklist de versão e branch `master`.

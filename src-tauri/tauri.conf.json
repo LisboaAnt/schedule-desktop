@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Agenda",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.calendario.widget",
   "build": {
     "beforeDevCommand": "npm run build:frontend",
-    "beforeBuildCommand": "npm run build:frontend",
+    "beforeBuildCommand": "npm run build:frontend && npm run prepare-watchdog-release",
     "frontendDist": "../src"
   },
   "app": {
@@ -43,7 +43,10 @@
       "icons/icon.ico"
     ],
     "shortDescription": "Calendário widget e app para Windows",
-    "longDescription": "Calendário leve com modo widget e integração Google Calendar (em desenvolvimento)."
+    "longDescription": "Calendário leve com modo widget e integração Google Calendar (em desenvolvimento).",
+    "externalBin": [
+      "binaries/agenda-watchdog"
+    ]
   },
   "plugins": {
     "deep-link": {
