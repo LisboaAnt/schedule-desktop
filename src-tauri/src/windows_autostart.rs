@@ -5,7 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
-use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
+#[cfg(not(debug_assertions))]
+use winreg::enums::KEY_READ;
+use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
 use winreg::RegKey;
 
 const RUN_SUBKEY: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";

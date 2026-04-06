@@ -63,7 +63,7 @@ npm run tauri dev
 npm run tauri build
 ```
 
-Saída em `target/release/` (workspace na raiz do repo), artefatos de instalador conforme o Tauri, e o vigia empacotado como sidecar — ver [WATCHDOG.md](./WATCHDOG.md).
+Saída em `target/release/` (workspace na raiz do repo), artefatos de instalador conforme o Tauri, e o vigia empacotado como sidecar — ver [WATCHDOG.md](./WATCHDOG.md). O instalador **NSIS** usa um [template personalizado](../src-tauri/windows/installer.nsi) para que **atalhos** e **«Executar após instalar»** lancem o **`agenda-watchdog.exe`** (o `.msi` WiX segue o modelo por defeito; ver [INTENCAO-VIGIA-WALLPAPER.md](./INTENCAO-VIGIA-WALLPAPER.md)).
 
 ---
 

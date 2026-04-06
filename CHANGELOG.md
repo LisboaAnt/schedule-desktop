@@ -22,6 +22,17 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 
 - Reiniciar a app após alterar `tauri.conf.json` (transparência nativa).
 
+## [0.1.4] — 2026-04-06
+
+### Adicionado
+
+- [docs/INTENCAO-VIGIA-WALLPAPER.md](docs/INTENCAO-VIGIA-WALLPAPER.md): objectivo do vigia externo vs. modo WorkerW, limitações (saída 0, fase B) e nota sobre `.msi` (WiX).
+
+### Alterado
+
+- **Windows / instalador NSIS**: template [`src-tauri/windows/installer.nsi`](src-tauri/windows/installer.nsi) para que atalhos (Menu Iniciar, ambiente de trabalho quando criado) e **«Executar após instalar»** apontem para `agenda-watchdog.exe`; desinstalador remove atalhos mesmo quando o alvo é o vigia.
+- **Diagnóstico**: com arranque via vigia, uma linha em `workerw.log` se `AGENDA_WATCHDOG_SESSION` estiver definida. [WATCHDOG.md](docs/WATCHDOG.md) e [COMO-RODAR.md](docs/COMO-RODAR.md) actualizados.
+
 ## [0.1.3] — 2026-04-06
 
 ### Corrigido

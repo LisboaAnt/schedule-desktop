@@ -249,8 +249,11 @@
                     >
                   </label>
                   <p class="settings-callout settings-callout--subtle" id="autostart-watchdog-hint">
-                    Com o vigia, o arranque do Windows lança o vigia, que por sua vez abre a Agenda; se o processo
-                    terminar com erro, tenta voltar a abrir (limite e backoff). Saída normal não reinicia em loop.
+                    Com o vigia, o arranque do Windows lança o <code>agenda-watchdog.exe</code>, que abre a Agenda.
+                    Se o processo principal <strong>falhar</strong> (crash, saída com erro), o vigia tenta relançar
+                    (limite e backoff). Quando sais por completo (<strong>Sair</strong> na bandeja), a Agenda termina
+                    normalmente e o <strong>vigia também fecha</strong> — não fica em segundo plano; no próximo início
+                    de sessão o Windows volta a executar o vigia se «Iniciar com o Windows» estiver activo.
                   </p>
                   <label class="field settings-field settings-field--tight">
                     <span class="settings-label">Vigia: atraso antes de relançar (ms)</span>

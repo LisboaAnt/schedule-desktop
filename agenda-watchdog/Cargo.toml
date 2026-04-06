@@ -1,6 +1,6 @@
 [package]
 name = "agenda-watchdog"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Vigia mínimo para relançar a Agenda após falha (Windows)"
 publish = false

@@ -52,12 +52,13 @@ O campo **`watchdogPreRetryDelayMs`** (0–10000) no mesmo `config.json` define 
 
 ## Limitações
 
+- Intenção de produto e relação com o modo **WorkerW / wallpaper**: [INTENCAO-VIGIA-WALLPAPER.md](./INTENCAO-VIGIA-WALLPAPER.md).
 - Se o crash do processo principal **sempre** terminar com código `0`, o vigia **não** relança — nesse caso o plano é a arquitectura em **duas superfícies** ([ROADMAP-WORKERW-AB.md](./ROADMAP-WORKERW-AB.md) fase B).
 - Uma **segunda instância** do Tauri pode sair com **0** muito rápido (plugin *single-instance*); o vigia interpreta isso como fecho limpo e **termina**. Um `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS` (ex.: 500–1000) **antes** do próximo arranque após **falha** pode ajudar quando a corrida envolve saídas **não zero**; para saídas **0**, só `AGENDA_WATCHDOG_RELUNCH_ON_ZERO` (experimental) ou evolução do produto (fase B).
 
 ### Mudança de wallpaper / modo WorkerW
 
-Não contes com o vigia para **corrigir** o fecho da app ao mudar wallpaper com a janela ancorada ao WorkerW: o problema é a camada Explorer/WebView2, não a ausência de relançamento. Para **perceber** o que o vigia viu, usa `watchdog.log` (ver [COMO-RODAR.md](./COMO-RODAR.md) — secção «Diagnosticar»).
+Não contes com o vigia **sozinho** para «corrigir» o fecho da app ao mudar wallpaper com a janela ancorada ao WorkerW: a camada Explorer/WebView2 é frequentemente a causa; além disso, se o processo terminar com **código 0**, o vigia **não** relança (ver [INTENCAO-VIGIA-WALLPAPER.md](./INTENCAO-VIGIA-WALLPAPER.md)). Para **perceber** o que o vigia externo viu, usa `watchdog.log` (ver [COMO-RODAR.md](./COMO-RODAR.md) — secção «Diagnosticar»). Com arranque **via vigia**, uma linha em `workerw.log` confirma `AGENDA_WATCHDOG_SESSION` no arranque.
 
 ### Posição da janela após o vigia relançar
 

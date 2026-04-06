@@ -1423,6 +1423,12 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(windows)]
+            if std::env::var("AGENDA_WATCHDOG_SESSION").is_ok() {
+                workerw_log::append_line(
+                    "launch: child of agenda-watchdog (AGENDA_WATCHDOG_SESSION set); see docs/INTENCAO-VIGIA-WALLPAPER.md",
+                );
+            }
             apply_desktop_wallpaper_state_on_launch(app.handle());
             schedule_window_state_save_after_launch_settle(app.handle());
             spawn_periodic_window_state_save(app.handle());
