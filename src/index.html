@@ -252,6 +252,23 @@
                     Com o vigia, o arranque do Windows lança o vigia, que por sua vez abre a Agenda; se o processo
                     terminar com erro, tenta voltar a abrir (limite e backoff). Saída normal não reinicia em loop.
                   </p>
+                  <label class="field settings-field settings-field--tight">
+                    <span class="settings-label">Vigia: atraso antes de relançar (ms)</span>
+                    <input
+                      type="number"
+                      id="input-watchdog-pre-retry-ms"
+                      min="0"
+                      max="10000"
+                      step="100"
+                      value="0"
+                      class="settings-input"
+                      title="0 = mínimo; 500–1000 pode ajudar se a nova instância sair logo (single-instance). Não evita o fecho ao mudar wallpaper no modo fundo (ver documentação)."
+                    />
+                  </label>
+                  <p class="settings-callout settings-callout--subtle" id="autostart-watchdog-delay-hint">
+                    Gravado em configuração e lido pelo <code>agenda-watchdog.exe</code> ao relançar. A variável de ambiente
+                    <code>AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS</code> sobrepõe este valor se definida.
+                  </p>
                   <label class="field field-checkbox-row settings-field settings-field--row">
                     <input type="checkbox" id="chk-close-to-tray" />
                     <span class="settings-label settings-label--inline">Ao fechar, ocultar na bandeja (não sair)</span>

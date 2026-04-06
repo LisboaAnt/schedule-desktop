@@ -22,6 +22,16 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 
 - Reiniciar a app após alterar `tauri.conf.json` (transparência nativa).
 
+## [0.1.3] — 2026-04-06
+
+### Corrigido
+
+- **Windows / autostart com vigia**: ao arranque da app, a rotina que corrigia aspas no registo `Run` regravava sempre o caminho para o executável principal, anulando `agenda-watchdog.exe`. Com «Iniciar com o Windows» e «Vigia» activos, o registo mantém-se agora alinhado com `config.json`.
+
+### Alterado
+
+- **Vigia**: campo em Definições para `watchdogPreRetryDelayMs` (0–10000 ms antes do backoff); `agenda-watchdog` lê o valor em `config.json` (variável de ambiente continua a sobrepor). Ver [WATCHDOG.md](docs/WATCHDOG.md).
+
 ## [0.1.2] — 2026-04-06
 
 ### Alterado

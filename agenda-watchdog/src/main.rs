@@ -6,7 +6,8 @@
 //! - `AGENDA_WATCHDOG_MAX_ATTEMPTS` — tentativas de arranque por sessão do vigia (defeito 5).
 //! - `AGENDA_WATCHDOG_BACKOFF_MS` — backoff inicial em ms (defeito 2000).
 //! - `AGENDA_WATCHDOG_BACKOFF_CAP_MS` — tecto do backoff (defeito 60000).
-//! - `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS` — atraso após saída com falha, antes do backoff (defeito 0).
+//! - `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS` — atraso após saída com falha, antes do backoff (defeito 0); sobrepõe o valor em `config.json` se definido.
+//! - `watchdogPreRetryDelayMs` em `%APPDATA%\\com.calendario.widget\\config.json` (ou `%LOCALAPPDATA%` como recurso) — gravado pela app em Definições.
 //! - `AGENDA_WATCHDOG_RELUNCH_ON_ZERO=1` — trata saída com código 0 como falha e relança (perigoso; ver docs).
 //! - `AGENDA_WATCHDOG_LOG=0` — desliga o log em ficheiro.
 
@@ -17,6 +18,15 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 use std::thread;
 use std::time::Duration;
+
+use serde::Deserialize;
+
+/// Só os campos necessários; o resto do `config.json` da app ignora-se.
+#[derive(Debug, Deserialize)]
+struct ConfigWatchdogSlice {
+    #[serde(default, rename = "watchdogPreRetryDelayMs")]
+    watchdog_pre_retry_delay_ms: Option<u64>,
+}
 
 fn file_log_enabled() -> bool {
     std::env::var("AGENDA_WATCHDOG_LOG").ok().as_deref() != Some("0")
@@ -129,13 +139,60 @@ fn backoff_cap_ms() -> u64 {
         .unwrap_or(60_000)
 }
 
+fn app_config_json_candidates() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    // Tauri `app_config_dir` no Windows: normalmente %APPDATA%\identifier
+    if let Ok(app) = std::env::var("APPDATA") {
+        v.push(
+            PathBuf::from(app)
+                .join("com.calendario.widget")
+                .join("config.json"),
+        );
+    }
+    if let Ok(loc) = std::env::var("LOCALAPPDATA") {
+        v.push(
+            PathBuf::from(loc)
+                .join("com.calendario.widget")
+                .join("config.json"),
+        );
+    }
+    v
+}
+
+fn pre_retry_delay_ms_from_config_file() -> Option<u64> {
+    for path in app_config_json_candidates() {
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(s) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(cfg) = serde_json::from_str::<ConfigWatchdogSlice>(&s) else {
+            continue;
+        };
+        if let Some(ms) = cfg.watchdog_pre_retry_delay_ms {
+            let ms = ms.min(10_000);
+            append_log_line(&format!(
+                "config_watchdog_pre_retry_delay_ms={ms} path={}",
+                path.display()
+            ));
+            return Some(ms);
+        }
+    }
+    None
+}
+
 /// Atraso após o processo filho terminar com **falha** (ou com 0 se `RELUNCH_ON_ZERO`), antes do backoff.
+/// Ordem: variável de ambiente (testes) > `config.json` (Definições na app) > 0.
 fn pre_retry_delay_ms() -> u64 {
-    std::env::var("AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .filter(|&n| n <= 10_000)
-        .unwrap_or(0)
+    if let Ok(v) = std::env::var("AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS") {
+        if let Ok(n) = v.parse::<u64>() {
+            if n <= 10_000 {
+                return n;
+            }
+        }
+    }
+    pre_retry_delay_ms_from_config_file().unwrap_or(0)
 }
 
 fn relaunch_on_clean_exit() -> bool {

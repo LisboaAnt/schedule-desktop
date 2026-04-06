@@ -46,7 +46,7 @@ let agendaView = "month";
 /** Data âncora para navegação (dia em foco) */
 let cursor = new Date();
 
-/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean, windowRoundedCorners?: boolean, windowShowBorder?: boolean, autostartUseWatchdog?: boolean }} */
+/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean, windowRoundedCorners?: boolean, windowShowBorder?: boolean, autostartUseWatchdog?: boolean, watchdogPreRetryDelayMs?: number }} */
 let appConfig = {
   viewMode: "widget",
   theme: "dark",
@@ -57,6 +57,7 @@ let appConfig = {
   windowRoundedCorners: true,
   windowShowBorder: true,
   autostartUseWatchdog: false,
+  watchdogPreRetryDelayMs: 0,
 };
 
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -65,6 +66,13 @@ let lastWindowFocusSyncMs = 0;
 let oauthLoginInFlight = false;
 /** @type {ReturnType<typeof setTimeout> | null} */
 let monthLayoutDebounce = null;
+
+/** 0–10000 ms; vigia lê de config.json */
+function clampWatchdogPreRetryMs(n) {
+  const x = Math.floor(Number(n));
+  if (Number.isNaN(x)) return 0;
+  return Math.min(10000, Math.max(0, x));
+}
 
 /** Máx. cartões por coluna (semana) / no dia — evita DOM enorme com Google Calendar cheio. */
 const MAX_TASKS_WEEK_COLUMN = 60;
@@ -951,6 +959,11 @@ async function persistConfig() {
         typeof appConfig.autostartUseWatchdog === "boolean"
           ? appConfig.autostartUseWatchdog
           : Boolean(prev.autostartUseWatchdog),
+      watchdogPreRetryDelayMs: clampWatchdogPreRetryMs(
+        typeof appConfig.watchdogPreRetryDelayMs === "number"
+          ? appConfig.watchdogPreRetryDelayMs
+          : Number(prev.watchdogPreRetryDelayMs) || 0,
+      ),
     },
   });
   const startWin = document.getElementById("chk-start-windows");
@@ -980,6 +993,9 @@ async function loadConfig() {
       windowRoundedCorners: c.windowRoundedCorners !== false,
       windowShowBorder: c.windowShowBorder !== false,
       autostartUseWatchdog: Boolean(c.autostartUseWatchdog),
+      watchdogPreRetryDelayMs: clampWatchdogPreRetryMs(
+        c.watchdogPreRetryDelayMs ?? 0,
+      ),
     };
   } catch (e) {
     console.warn("get_app_config", e);
@@ -1012,6 +1028,13 @@ async function loadConfig() {
 
   const wd = document.getElementById("chk-autostart-watchdog");
   if (wd) wd.checked = Boolean(appConfig.autostartUseWatchdog);
+
+  const wdDelay = document.getElementById("input-watchdog-pre-retry-ms");
+  if (wdDelay) {
+    wdDelay.value = String(
+      clampWatchdogPreRetryMs(appConfig.watchdogPreRetryDelayMs ?? 0),
+    );
+  }
 
   const chkRounded = document.getElementById("chk-window-rounded");
   if (chkRounded) chkRounded.checked = appConfig.windowRoundedCorners !== false;
@@ -1695,6 +1718,13 @@ window.addEventListener("DOMContentLoaded", () => {
     appConfig.autostartUseWatchdog = input.checked;
     await persistConfig();
     await refreshAutostartWatchdogUi();
+  });
+
+  document.getElementById("input-watchdog-pre-retry-ms")?.addEventListener("change", async (e) => {
+    const input = /** @type {HTMLInputElement} */ (e.target);
+    appConfig.watchdogPreRetryDelayMs = clampWatchdogPreRetryMs(input.value);
+    input.value = String(appConfig.watchdogPreRetryDelayMs);
+    await persistConfig();
   });
 
   window.addEventListener("focus", () => {

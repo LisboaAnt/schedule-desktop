@@ -35,6 +35,8 @@ O binário **debug** é compilado com `cfg(dev)`: o WebView tenta carregar a UI 
 
 Em **Definições → Arranque e bandeja**, a opção **«Vigia: reinício após falha»** grava em `config.json` o campo `autostartUseWatchdog`. Com **«Iniciar com o Windows»** activo, o registo `Run` passa a apontar para `agenda-watchdog.exe` em vez do executável principal (só se o ficheiro existir).
 
+O campo **`watchdogPreRetryDelayMs`** (0–10000) no mesmo `config.json` define o atraso em milissegundos antes de o vigia voltar a lançar a app após falha; **0** = só o backoff. O vigia lê este ficheiro em `%APPDATA%\com.calendario.widget\config.json` (ou `%LOCALAPPDATA%\…` como recurso). A variável de ambiente `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS`, se existir, **sobrepõe** o valor das definições.
+
 ## Variáveis de ambiente (vigia)
 
 
@@ -44,7 +46,7 @@ Em **Definições → Arranque e bandeja**, a opção **«Vigia: reinício após
 | `AGENDA_WATCHDOG_MAX_ATTEMPTS`        | Tentativas por sessão (defeito 5).                                          |
 | `AGENDA_WATCHDOG_BACKOFF_MS`          | Backoff inicial em ms (defeito 2000).                                      |
 | `AGENDA_WATCHDOG_BACKOFF_CAP_MS`      | Tecto do backoff (defeito 60000).                                         |
-| `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS`  | Atraso em ms (0–10000, defeito 0) após o filho terminar **com falha** (ou com 0 se `RELUNCH_ON_ZERO`), **antes** do backoff — ajuda a libertar mutex do *single-instance* antes do próximo `spawn`. |
+| `AGENDA_WATCHDOG_PRE_RETRY_DELAY_MS`  | Igual ao valor das **Definições** (`watchdogPreRetryDelayMs`); se definida no sistema, **sobrepõe** o `config.json`. Atraso em ms (0–10000) após falha, **antes** do backoff. |
 | `AGENDA_WATCHDOG_RELUNCH_ON_ZERO`     | Se `1` ou `true`, trata **saída com código 0** como falha e relança até ao máximo de tentativas. **Perigoso:** também relança após **«Sair»** na bandeja; usar só para testes. |
 | `AGENDA_WATCHDOG_LOG=0`               | Desliga `%LOCALAPPDATA%\com.calendario.widget\logs\watchdog.log`.           |
 

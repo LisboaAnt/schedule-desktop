@@ -61,9 +61,13 @@ pub fn rewrite_run_value_with_watchdog(app: &AppHandle) -> Result<(), String> {
     set_run_value_quoted_path(app, &w)
 }
 
-/// Se já existe entrada de autostart para esta app, corrige aspas (útil após updates ou registo antigo).
-#[allow(dead_code)]
-pub fn fix_if_autostart_entry_exists(app: &AppHandle) {
+/// Se já existe entrada `Run` para esta app, regrava o caminho com aspas correctas.
+///
+/// **Importante:** se `autostart_use_watchdog` for `true`, o valor deve apontar para
+/// `agenda-watchdog.exe`. Antes regravávamos sempre o `.exe` principal e **apagávamos** o vigia
+/// no arranque seguinte.
+#[cfg(not(debug_assertions))]
+pub fn fix_if_autostart_entry_exists(app: &AppHandle, autostart_use_watchdog: bool) {
     let name = app.package_info().name.clone();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let Ok(run) = hkcu.open_subkey_with_flags(RUN_SUBKEY, KEY_READ) else {
@@ -72,7 +76,16 @@ pub fn fix_if_autostart_entry_exists(app: &AppHandle) {
     if run.get_value::<String, _>(&name).is_err() {
         return;
     }
-    let _ = rewrite_run_value_with_quoted_exe(app);
+    if autostart_use_watchdog {
+        if let Err(e) = rewrite_run_value_with_watchdog(app) {
+            eprintln!(
+                "[agenda] autostart Run: vigia indisponível ({e}); a manter/corrigir executável principal."
+            );
+            let _ = rewrite_run_value_with_quoted_exe(app);
+        }
+    } else {
+        let _ = rewrite_run_value_with_quoted_exe(app);
+    }
 }
 
 /// Remove a entrada de autostart desta app no registo do Windows (se existir).

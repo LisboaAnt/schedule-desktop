@@ -275,6 +275,9 @@ pub struct AppConfig {
     /// Windows: «Iniciar com o Windows» usa `agenda-watchdog.exe` para relançar após crash (requer sidecar).
     #[serde(default)]
     pub autostart_use_watchdog: bool,
+    /// Atraso em ms antes de relançar após falha (vigia); 0 = imediato após backoff; máx. 10000. Lido por `agenda-watchdog` a partir deste `config.json`.
+    #[serde(default)]
+    pub watchdog_pre_retry_delay_ms: Option<u64>,
 }
 
 fn default_auto_sync_minutes() -> u32 {
@@ -317,6 +320,7 @@ impl Default for AppConfig {
             window_rounded_corners: true,
             window_show_border: true,
             autostart_use_watchdog: false,
+            watchdog_pre_retry_delay_ms: None,
         }
     }
 }
@@ -1423,7 +1427,12 @@ pub fn run() {
             schedule_window_state_save_after_launch_settle(app.handle());
             spawn_periodic_window_state_save(app.handle());
             #[cfg(all(windows, not(debug_assertions)))]
-            windows_autostart::fix_if_autostart_entry_exists(app.handle());
+            {
+                let wd = read_config_file(app.handle())
+                    .map(|c| c.autostart_use_watchdog)
+                    .unwrap_or(false);
+                windows_autostart::fix_if_autostart_entry_exists(app.handle(), wd);
+            }
             #[cfg(all(windows, debug_assertions))]
             let _ = windows_autostart::remove_run_value(app.handle());
             if let Err(e) = local_store::init(app.handle()) {
