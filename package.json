@@ -1,13 +1,14 @@
 {
   "name": "calendario-app",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "Calendário desktop Windows — widget + app (Tauri + Google Calendar)",
   "scripts": {
     "build:frontend": "esbuild src/main.js --bundle --outfile=src/main.bundle.js --format=esm --platform=browser",
     "prepare-watchdog": "cargo build -p agenda-watchdog && node scripts/copy-watchdog.mjs --profile=debug",
     "prepare-watchdog-release": "cargo build -p agenda-watchdog --release && node scripts/copy-watchdog.mjs --profile=release",
+    "run:watchdog-release": "cargo build -p calendario-app --release && cargo build -p agenda-watchdog && node scripts/run-watchdog-release.mjs",
     "dev": "tauri dev",
     "build": "npm run build:frontend && tauri build",
     "build:ci": "tauri build --no-bundle --ci",

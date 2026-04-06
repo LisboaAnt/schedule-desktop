@@ -58,7 +58,7 @@ O campo **`watchdogPreRetryDelayMs`** (0–10000) no mesmo `config.json` define 
 
 ### Mudança de wallpaper / modo WorkerW
 
-Não contes com o vigia **sozinho** para «corrigir» o fecho da app ao mudar wallpaper com a janela ancorada ao WorkerW: a camada Explorer/WebView2 é frequentemente a causa; além disso, se o processo terminar com **código 0**, o vigia **não** relança (ver [INTENCAO-VIGIA-WALLPAPER.md](./INTENCAO-VIGIA-WALLPAPER.md)). Para **perceber** o que o vigia externo viu, usa `watchdog.log` (ver [COMO-RODAR.md](./COMO-RODAR.md) — secção «Diagnosticar»). Com arranque **via vigia**, uma linha em `workerw.log` confirma `AGENDA_WATCHDOG_SESSION` no arranque.
+Com **`desktopBehindIcons`: true** em `config.json` e o processo a sair com **código 0** **sem** o ficheiro `user_quit_watchdog.flag` (criado pela app ao escolher **«Sair»** na bandeja), o vigia **volta a lançar** a app (até ao máximo de tentativas e com backoff), para cobrir fechos «limpos» ao mudar wallpaper. Se saíres pela bandeja, o ficheiro é gravado **antes** de `exit(0)` e o vigia **termina** sem relançar. Ver [INTENCAO-VIGIA-WALLPAPER.md](./INTENCAO-VIGIA-WALLPAPER.md). Para **perceber** o que o vigia externo viu, usa `watchdog.log` ([COMO-RODAR.md](./COMO-RODAR.md) — «Diagnosticar»). Com arranque **via vigia**, `workerw.log` pode registar `AGENDA_WATCHDOG_SESSION`.
 
 ### Posição da janela após o vigia relançar
 

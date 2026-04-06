@@ -57,6 +57,16 @@ npm run tauri dev
 
 (Se o `package.json` usar outro script, seguir o que estiver documentado no README.)
 
+**Porque isto não executa o `agenda-watchdog`:** o `tauri dev` arranca **só** o processo principal com o servidor de desenvolvimento do frontend — é o fluxo normal. O `npm run prepare-watchdog` **compila** o vigia e copia-o para `src-tauri/binaries/` (para o pacote / `externalBin`), mas **não** o coloca como processo pai. O vigia entra na cadeia quando lanças explicitamente `agenda-watchdog.exe` (ou o atalho do **instalador NSIS** após `npm run tauri build`).
+
+**Testar vigia + app localmente (sem `tauri dev`):** o binário **debug** do Tauri espera o servidor de dev; por isso usa-se o **release** do pacote principal com o vigia:
+
+```powershell
+npm run run:watchdog-release
+```
+
+(Isto faz `cargo build` do `calendario-app` em release, do `agenda-watchdog` em debug, e executa `target\debug\agenda-watchdog.exe --child target\release\calendario-app.exe`.) Alternativa manual: [WATCHDOG.md](./WATCHDOG.md) (secção «127.0.0.1 recusou a ligação»).
+
 ### 4. Build de produção (instalável)
 
 ```powershell

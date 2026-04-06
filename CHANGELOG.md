@@ -22,6 +22,12 @@ O formato baseia-se em [Keep a Changelog](https://keepachangelog.com/pt-PT/1.1.0
 
 - Reiniciar a app após alterar `tauri.conf.json` (transparência nativa).
 
+## [0.1.5] — 2026-04-06
+
+### Corrigido
+
+- **Vigia + modo fundo (`desktopBehindIcons`)**: se a app sair com código **0** sem «Sair» na bandeja (ex. mudança de wallpaper), o `agenda-watchdog` volta a lançar a Agenda; **«Sair»** grava `user_quit_watchdog.flag` para o vigia terminar sem relançar. Ver [WATCHDOG.md](docs/WATCHDOG.md) e [INTENCAO-VIGIA-WALLPAPER.md](docs/INTENCAO-VIGIA-WALLPAPER.md).
+
 ## [0.1.4] — 2026-04-06
 
 ### Adicionado

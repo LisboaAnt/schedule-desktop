@@ -28,9 +28,9 @@ Este documento regista o **objectivo do utilizador** e a **realidade técnica** 
 
 ## Relançamento após wallpaper / WebView2
 
-- O vigia **só** trata saídas **não** bem-sucedidas como «falha» a relançar. Se o processo morrer com **código 0** (ou comportamento que o vigia interpreta como sucesso), **não** há relançamento — ver limitações em [`WATCHDOG.md`](./WATCHDOG.md) e a **fase B** em [`ROADMAP-WORKERW-AB.md`](./ROADMAP-WORKERW-AB.md) (duas superfícies).
-- **Não** existe ainda uma regra segura na app para distinguir **«Sair»** do utilizador de **morte anómala** no modo wallpaper; por isso **não** se força `exit(≠0)` só com base em `desktop_behind_icons`.
-- Em arranque, se existir **`AGENDA_WATCHDOG_SESSION`** (injectada pelo vigia), regista-se uma linha em `workerw.log` para diagnóstico (ver [`COMO-RODAR.md`](./COMO-RODAR.md)).
+- Com **`desktopBehindIcons`** activo em `config.json`, se o processo filho terminar com **código 0** **e** **não** existir o ficheiro **`user_quit_watchdog.flag`** (a app grava-o ao escolher **«Sair»** na bandeja), o vigia **interpreta** como fecho inesperado (ex. wallpaper) e **relança** a app (com o mesmo limite de tentativas e backoff que para falhas). **Sair** pela bandeja grava o ficheiro antes de sair, para o vigia **não** relançar em loop.
+- Para outros cenários (crash sem código 0, ou `desktopBehindIcons` falso), mantém-se o comportamento anterior. A **fase B** em [`ROADMAP-WORKERW-AB.md`](./ROADMAP-WORKERW-AB.md) continua relevante para limitações da camada WebView2.
+- Em arranque, se existir **`AGENDA_WATCHDOG_SESSION`**, pode registar-se uma linha em `workerw.log` (ver [`COMO-RODAR.md`](./COMO-RODAR.md)).
 
 ## Manutenção do `installer.nsi`
 

@@ -325,6 +325,37 @@ impl Default for AppConfig {
     }
 }
 
+/// Marca saída intencional («Sair» na bandeja) para o vigia não relançar após código 0 com modo fundo.
+#[cfg(windows)]
+const USER_QUIT_WATCHDOG_FLAG: &str = "user_quit_watchdog.flag";
+
+#[cfg(windows)]
+fn user_quit_watchdog_flag_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join(USER_QUIT_WATCHDOG_FLAG))
+}
+
+#[cfg(windows)]
+fn write_user_quit_watchdog_flag(app: &tauri::AppHandle) {
+    if let Ok(p) = user_quit_watchdog_flag_path(app) {
+        if let Some(parent) = p.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(&p, b"1");
+    }
+}
+
+/// Arranque directo ao `.exe` (sem `AGENDA_WATCHDOG_SESSION`): remove sinalizador antigo.
+#[cfg(windows)]
+fn clear_stale_user_quit_watchdog_flag(app: &tauri::AppHandle) {
+    if std::env::var("AGENDA_WATCHDOG_SESSION").is_ok() {
+        return;
+    }
+    if let Ok(p) = user_quit_watchdog_flag_path(app) {
+        let _ = fs::remove_file(p);
+    }
+}
+
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -919,6 +950,8 @@ fn setup_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
                     let _ = w.hide();
                 }
             } else if event.id == quit_id {
+                #[cfg(windows)]
+                write_user_quit_watchdog_flag(app.app_handle());
                 app.exit(0);
             }
         })
@@ -1423,6 +1456,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(windows)]
+            clear_stale_user_quit_watchdog_flag(app.handle());
             #[cfg(windows)]
             if std::env::var("AGENDA_WATCHDOG_SESSION").is_ok() {
                 workerw_log::append_line(

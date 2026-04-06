@@ -1,5 +1,6 @@
-//! Vigia mínimo (Windows): lança o executável principal, espera que termine e só volta a
-//! lançar se o código de saída indicar falha (não saída limpa), com backoff e limite de tentativas.
+//! Vigia mínimo (Windows): lança o executável principal, espera que termine e volta a lançar se
+//! o código de saída indicar falha, **ou** (excepção) saída limpa com `desktopBehindIcons` em
+//! `config.json` **e** sem ficheiro `user_quit_watchdog.flag` (fecho tipo mudança de wallpaper).
 //!
 //! Variáveis de ambiente:
 //! - `AGENDA_CHILD_EXE` — caminho absoluto do `.exe` principal (opcional se `--child` ou procura ao lado).
@@ -26,6 +27,9 @@ use serde::Deserialize;
 struct ConfigWatchdogSlice {
     #[serde(default, rename = "watchdogPreRetryDelayMs")]
     watchdog_pre_retry_delay_ms: Option<u64>,
+    /// Modo «atrás dos ícones» — se `true` e saída limpa sem ficheiro de «Sair», relança (wallpaper, etc.).
+    #[serde(default, rename = "desktopBehindIcons")]
+    desktop_behind_icons: Option<bool>,
 }
 
 fn file_log_enabled() -> bool {
@@ -159,6 +163,51 @@ fn app_config_json_candidates() -> Vec<PathBuf> {
     v
 }
 
+fn user_quit_flag_paths() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Ok(app) = std::env::var("APPDATA") {
+        v.push(
+            PathBuf::from(app)
+                .join("com.calendario.widget")
+                .join("user_quit_watchdog.flag"),
+        );
+    }
+    if let Ok(loc) = std::env::var("LOCALAPPDATA") {
+        v.push(
+            PathBuf::from(loc)
+                .join("com.calendario.widget")
+                .join("user_quit_watchdog.flag"),
+        );
+    }
+    v
+}
+
+fn user_quit_flag_exists() -> bool {
+    user_quit_flag_paths().iter().any(|p| p.is_file())
+}
+
+fn remove_user_quit_flags() {
+    for p in user_quit_flag_paths() {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+fn desktop_behind_icons_from_config_file() -> bool {
+    for path in app_config_json_candidates() {
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(s) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(cfg) = serde_json::from_str::<ConfigWatchdogSlice>(&s) else {
+            continue;
+        };
+        return cfg.desktop_behind_icons.unwrap_or(false);
+    }
+    false
+}
+
 fn pre_retry_delay_ms_from_config_file() -> Option<u64> {
     for path in app_config_json_candidates() {
         if !path.is_file() {
@@ -249,8 +298,19 @@ fn run() -> Result<ExitCode, String> {
         ));
 
         if success && !relaunch_on_clean_exit() {
-            append_log_line("session_end clean_exit");
-            return Ok(ExitCode::SUCCESS);
+            if user_quit_flag_exists() {
+                remove_user_quit_flags();
+                append_log_line("session_end clean_exit user_quit_flag");
+                return Ok(ExitCode::SUCCESS);
+            }
+            if !desktop_behind_icons_from_config_file() {
+                append_log_line("session_end clean_exit");
+                return Ok(ExitCode::SUCCESS);
+            }
+            append_log_line(
+                "clean_exit with desktopBehindIcons: retrying (fecho inesperado ex. wallpaper)",
+            );
+            // Continua como falha: backoff + nova tentativa (até max_attempts).
         }
 
         if success && relaunch_on_clean_exit() {
