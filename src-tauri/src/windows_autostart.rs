@@ -2,6 +2,8 @@
 //! partindo caminhos com espaços (ex. `C:\Program Files\...`) — o Windows trata o primeiro
 //! token como `C:\Program`, falha ou abre `cmd`/comportamentos estranhos.
 
+use std::path::{Path, PathBuf};
+
 use tauri::AppHandle;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
 use winreg::RegKey;
@@ -16,10 +18,8 @@ fn strip_verbatim_prefix(path: &str) -> &str {
     }
 }
 
-/// Reescreve o valor Run com o caminho atual do `.exe` entre aspas (mesmo nome de chave que o plugin autostart).
-pub fn rewrite_run_value_with_quoted_exe(app: &AppHandle) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+fn set_run_value_quoted_path(app: &AppHandle, exe: &Path) -> Result<(), String> {
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let raw = exe.to_string_lossy();
     let path = strip_verbatim_prefix(&raw);
     let inner = path.replace('"', "\"\"");
@@ -32,6 +32,33 @@ pub fn rewrite_run_value_with_quoted_exe(app: &AppHandle) -> Result<(), String> 
         .set_value(&name, &value)
         .map_err(|e| format!("autostart Run: {e}"))?;
     Ok(())
+}
+
+/// Reescreve o valor Run com o caminho actual do `.exe` principal entre aspas (mesmo nome de chave que o plugin autostart).
+pub fn rewrite_run_value_with_quoted_exe(app: &AppHandle) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    set_run_value_quoted_path(app, &exe)
+}
+
+/// Caminho do vigia `agenda-watchdog.exe` (sidecar) na mesma pasta que o executável principal.
+pub fn watchdog_exe_path() -> Result<PathBuf, String> {
+    let main = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent = main
+        .parent()
+        .ok_or_else(|| "Sem pasta do executável principal.".to_string())?;
+    Ok(parent.join("agenda-watchdog.exe"))
+}
+
+/// Registo Run aponta para o vigia (deve existir `agenda-watchdog.exe` ao lado do `.exe` principal).
+pub fn rewrite_run_value_with_watchdog(app: &AppHandle) -> Result<(), String> {
+    let w = watchdog_exe_path()?;
+    if !w.is_file() {
+        return Err(
+            "agenda-watchdog.exe não encontrado junto da aplicação. Usa um instalador/build que inclua o vigia."
+                .to_string(),
+        );
+    }
+    set_run_value_quoted_path(app, &w)
 }
 
 /// Se já existe entrada de autostart para esta app, corrige aspas (útil após updates ou registo antigo).

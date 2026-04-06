@@ -19,9 +19,11 @@ mod local_store;
 mod windows_autostart;
 #[cfg(windows)]
 mod windows_desktop;
+#[cfg(windows)]
+mod workerw_log;
 
 #[cfg(windows)]
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[cfg(windows)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -30,13 +32,101 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[cfg(windows)]
 static DESKTOP_WALLPAPER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Contadores de sessão para `wallpaper_try_reanchor` (diagnóstico WorkerW).
+/// Contadores de sessão para `wallpaper_try_reanchor_impl` / `schedule_wallpaper_try_reanchor` (diagnóstico WorkerW).
 #[cfg(windows)]
 static REANCHOR_COUNT_WATCHDOG: AtomicU64 = AtomicU64::new(0);
 #[cfg(windows)]
 static REANCHOR_COUNT_SINGLE_INSTANCE: AtomicU64 = AtomicU64::new(0);
 #[cfg(windows)]
 static REANCHOR_COUNT_RESUMED: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+static REANCHOR_COUNT_SETTING_CHANGE: AtomicU64 = AtomicU64::new(0);
+
+/// Falhas consecutivas de `set_behind_icons` / WorkerW (A5.2).
+#[cfg(windows)]
+static WALLPAPER_ANCHOR_FAIL_STREAK: AtomicU32 = AtomicU32::new(0);
+
+/// Ciclos estáveis consecutivos do watchdog (`anchored_ok` / `light_visibility`) para backoff (A3.1).
+#[cfg(windows)]
+static WATCHDOG_STABLE_STREAK: AtomicU32 = AtomicU32::new(0);
+
+/// Segundos até ao próximo tick do watchdog; actualizado após cada `reanchor_impl` com `origin=watchdog`.
+#[cfg(windows)]
+static WATCHDOG_LOOP_SLEEP_SECS: AtomicU64 = AtomicU64::new(0);
+
+/// Intervalo base do watchdog em segundos (`AGENDA_WORKERW_WATCHDOG_SEC`, defeito 8, 2–120).
+#[cfg(windows)]
+fn watchdog_base_interval_secs() -> u64 {
+    std::env::var("AGENDA_WORKERW_WATCHDOG_SEC")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| (2..=120).contains(&n))
+        .unwrap_or(8)
+}
+
+/// Tecto do backoff (`AGENDA_WORKERW_WATCHDOG_BACKOFF_MAX_SEC`). Se ≤ base ou ausente, não há rampa.
+#[cfg(windows)]
+fn watchdog_backoff_max_interval_secs() -> u64 {
+    let base = watchdog_base_interval_secs();
+    std::env::var("AGENDA_WORKERW_WATCHDOG_BACKOFF_MAX_SEC")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n >= base && n <= 600)
+        .unwrap_or(base)
+}
+
+/// Mínimo de ticks estáveis consecutivos antes de aumentar o intervalo (`AGENDA_WORKERW_WATCHDOG_STABLE_TICKS`, defeito 4).
+#[cfg(windows)]
+fn watchdog_stable_ticks_before_backoff() -> u32 {
+    std::env::var("AGENDA_WORKERW_WATCHDOG_STABLE_TICKS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| (1..=100).contains(&n))
+        .unwrap_or(4)
+}
+
+#[cfg(windows)]
+fn watchdog_compute_sleep_secs(streak: u32) -> u64 {
+    let base = watchdog_base_interval_secs();
+    let max_s = watchdog_backoff_max_interval_secs();
+    if max_s <= base {
+        return base;
+    }
+    let k = watchdog_stable_ticks_before_backoff();
+    if streak < k {
+        return base;
+    }
+    let step = 4u64;
+    let bonus = (streak.saturating_sub(k)).saturating_add(1) as u64 * step;
+    (base + bonus).min(max_s)
+}
+
+/// Chamado só quando `origin == "watchdog"`. `stable` = sem `FullReparent`.
+#[cfg(windows)]
+fn watchdog_note_outcome(stable: bool) {
+    if stable {
+        let s = WATCHDOG_STABLE_STREAK.fetch_add(1, Ordering::Relaxed) + 1;
+        let sleep = watchdog_compute_sleep_secs(s);
+        let prev = WATCHDOG_LOOP_SLEEP_SECS.load(Ordering::SeqCst);
+        WATCHDOG_LOOP_SLEEP_SECS.store(sleep, Ordering::SeqCst);
+        if prev != sleep && windows_desktop::workerw_debug_enabled() {
+            eprintln!(
+                "[agenda] workerw watchdog: intervalo próximo ciclo {sleep}s (streak={s}, base={})",
+                watchdog_base_interval_secs()
+            );
+        }
+        workerw_log::append_line(&format!(
+            "watchdog_outcome stable=true streak={s} next_sleep_sec={sleep}"
+        ));
+    } else {
+        WATCHDOG_STABLE_STREAK.store(0, Ordering::SeqCst);
+        let base = watchdog_base_interval_secs();
+        WATCHDOG_LOOP_SLEEP_SECS.store(base, Ordering::SeqCst);
+        workerw_log::append_line(&format!(
+            "watchdog_outcome stable=false next_sleep_sec={base}"
+        ));
+    }
+}
 
 #[cfg(windows)]
 fn bump_reanchor_count(origin: &'static str) -> u64 {
@@ -44,9 +134,96 @@ fn bump_reanchor_count(origin: &'static str) -> u64 {
         "watchdog" => &REANCHOR_COUNT_WATCHDOG,
         "single_instance" => &REANCHOR_COUNT_SINGLE_INSTANCE,
         "resumed" => &REANCHOR_COUNT_RESUMED,
+        "setting_change" => &REANCHOR_COUNT_SETTING_CHANGE,
         _ => return 0,
     };
     c.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+#[cfg(windows)]
+fn wallpaper_max_anchor_failures() -> u32 {
+    std::env::var("AGENDA_WORKERW_MAX_FAILS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n > 0 && n <= 100)
+        .unwrap_or(5)
+}
+
+#[cfg(windows)]
+fn reset_wallpaper_anchor_fail_streak() {
+    WALLPAPER_ANCHOR_FAIL_STREAK.store(0, Ordering::SeqCst);
+}
+
+#[cfg(windows)]
+fn register_wallpaper_anchor_failure(app: &AppHandle, reason: &'static str) {
+    let n = WALLPAPER_ANCHOR_FAIL_STREAK.fetch_add(1, Ordering::SeqCst) + 1;
+    let max = wallpaper_max_anchor_failures();
+    if windows_desktop::workerw_debug_enabled() {
+        eprintln!(
+            "[agenda] workerw: falhas de ancoragem consecutivas {n}/{max} ({reason})"
+        );
+    }
+    if n >= max {
+        wallpaper_anchor_fallback_disabled(app, reason);
+    }
+}
+
+#[cfg(windows)]
+fn wallpaper_anchor_fallback_disabled(app: &AppHandle, reason: &'static str) {
+    eprintln!(
+        "[agenda] workerw: modo «atrás dos ícones» desactivado automaticamente ({reason})"
+    );
+    reset_wallpaper_anchor_fail_streak();
+    if let Err(e) = restore_desktop_wallpaper_mode_internal(app) {
+        eprintln!("[agenda] workerw: fallback restore: {e}");
+    }
+    let _ = app.emit(
+        "calendar://wallpaper-fallback",
+        serde_json::json!({ "reason": reason }),
+    );
+}
+
+/// WebView2: após `SetParent`, notificar o controlador (evita artefactos de layout; wry faz o mesmo em WM_MOVE).
+#[cfg(windows)]
+fn notify_webview_parent_position_changed<R: Runtime>(window: &WebviewWindow<R>) {
+    let _ = window.with_webview(|webview| unsafe {
+        let _ = webview.controller().NotifyParentWindowPositionChanged();
+    });
+}
+
+/// Geração monótona para debounce de reancoragens (último pedido ganha após o atraso).
+#[cfg(windows)]
+static WALLPAPER_REANCHOR_DEBOUNCE_GEN: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(windows)]
+fn wallpaper_reanchor_debounce_ms() -> u64 {
+    std::env::var("AGENDA_WORKERW_DEBOUNCE_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|&n| n <= 10_000)
+        .unwrap_or(400)
+}
+
+/// Funde pedidos de reancoragem numa janela de tempo (ver `wallpaper_reanchor_debounce_ms`).
+#[cfg(windows)]
+fn schedule_wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
+    let my_id = WALLPAPER_REANCHOR_DEBOUNCE_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+    workerw_log::append_line(&format!(
+        "schedule_reanchor origin={origin} debounce_gen={my_id}"
+    ));
+    let app2 = app.clone();
+    let ms = wallpaper_reanchor_debounce_ms();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(ms)).await;
+        let latest = WALLPAPER_REANCHOR_DEBOUNCE_GEN.load(Ordering::Relaxed);
+        if my_id != latest {
+            return;
+        }
+        let app3 = app2.clone();
+        let _ = app2.run_on_main_thread(move || {
+            wallpaper_try_reanchor_impl(&app3, origin);
+        });
+    });
 }
 
 /// Janela-pílula: quadrado ~ícone do ambiente de trabalho (lógico).
@@ -95,6 +272,9 @@ pub struct AppConfig {
     /// Contorno de 1px à volta do conteúdo (janela sem decorações nativas).
     #[serde(default = "default_true")]
     pub window_show_border: bool,
+    /// Windows: «Iniciar com o Windows» usa `agenda-watchdog.exe` para relançar após crash (requer sidecar).
+    #[serde(default)]
+    pub autostart_use_watchdog: bool,
 }
 
 fn default_auto_sync_minutes() -> u32 {
@@ -136,6 +316,7 @@ impl Default for AppConfig {
             close_to_tray: false,
             window_rounded_corners: true,
             window_show_border: true,
+            autostart_use_watchdog: false,
         }
     }
 }
@@ -215,14 +396,23 @@ fn start_background_google_sync_worker(app: &tauri::AppHandle) {
     });
 }
 
-/// Reancora a janela ao `WorkerW` e força visibilidade (chamar na thread principal).
+/// Execução efectiva da reancoragem (thread principal). Usar [`schedule_wallpaper_try_reanchor`] para debounce.
 #[cfg(windows)]
-fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
+fn wallpaper_try_reanchor_impl(app: &tauri::AppHandle, origin: &'static str) {
+    let from_watchdog = origin == "watchdog";
+    workerw_log::append_line(&format!("reanchor_impl begin origin={origin}"));
     if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
+        workerw_log::append_line("reanchor_impl skip wallpaper_active=false");
+        if from_watchdog {
+            watchdog_note_outcome(false);
+        }
         return;
     }
     let cfg = read_config_file(app).unwrap_or_default();
     if !cfg.desktop_behind_icons {
+        if from_watchdog {
+            watchdog_note_outcome(false);
+        }
         return;
     }
     let Some(main) = app.get_webview_window("main") else {
@@ -231,6 +421,9 @@ fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
                 "[agenda] workerw reanchor origin={origin} skip=no_main_window wallpaper_active={}",
                 DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst)
             );
+        }
+        if from_watchdog {
+            watchdog_note_outcome(false);
         }
         return;
     };
@@ -245,8 +438,67 @@ fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
         );
     }
 
-    let _ = main.show();
-    let _ = main.unminimize();
+    let heal = match windows_desktop::classify_wallpaper_heal(&main) {
+        Ok(k) => k,
+        Err(e) => {
+            eprintln!("[agenda] workerw classify_wallpaper_heal: {e}");
+            workerw_log::append_line(&format!("classify_wallpaper_heal err={e}"));
+            windows_desktop::WallpaperHealKind::FullReparent
+        }
+    };
+    workerw_log::append_line(&format!("reanchor_impl heal={heal:?}"));
+
+    match heal {
+        windows_desktop::WallpaperHealKind::None => {
+            if windows_desktop::workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw reanchor origin={origin} n={n} skip=anchored_ok"
+                );
+            }
+            workerw_log::append_line(&format!(
+                "reanchor origin={origin} n={n} skip=anchored_ok"
+            ));
+            reset_wallpaper_anchor_fail_streak();
+            if from_watchdog {
+                watchdog_note_outcome(true);
+            }
+            return;
+        }
+        windows_desktop::WallpaperHealKind::LightVisibility => {
+            if let Ok(h) = main.hwnd() {
+                windows_desktop::restore_wallpaper_visibility_hwnd(h);
+            }
+            let _ = main.show();
+            let _ = main.unminimize();
+            if windows_desktop::workerw_debug_enabled() {
+                eprintln!(
+                    "[agenda] workerw reanchor origin={origin} n={n} heal=light_visibility"
+                );
+            }
+            workerw_log::append_line(&format!(
+                "reanchor origin={origin} n={n} heal=light_visibility"
+            ));
+            reset_wallpaper_anchor_fail_streak();
+            let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+            if from_watchdog {
+                watchdog_note_outcome(true);
+            }
+            return;
+        }
+        windows_desktop::WallpaperHealKind::FullReparent => {}
+    }
+
+    workerw_log::append_line("reanchor_impl FullReparent path set_behind_icons");
+    let needs_unmin = main.is_minimized().unwrap_or(false)
+        || !main.is_visible().unwrap_or(true)
+        || main
+            .hwnd()
+            .map(windows_desktop::hwnd_needs_show_unminimize)
+            .unwrap_or(true);
+    if needs_unmin {
+        let _ = main.show();
+        let _ = main.unminimize();
+    }
     if let Err(e) = windows_desktop::set_behind_icons(
         &main,
         true,
@@ -254,8 +506,17 @@ fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
         cfg.window_show_border,
     ) {
         eprintln!("[agenda] reancorar modo fundo: {e}");
+        workerw_log::append_line(&format!("set_behind_icons failed: {e}"));
+        register_wallpaper_anchor_failure(app, "set_behind_icons_failed");
+    } else {
+        workerw_log::append_line("set_behind_icons ok notify_webview_parent");
+        reset_wallpaper_anchor_fail_streak();
+        notify_webview_parent_position_changed(&main);
     }
     let _ = main.eval(JS_WALLPAPER_REPOSITION_PILL);
+    if from_watchdog {
+        watchdog_note_outcome(false);
+    }
 }
 
 /// O Windows pode recriar a camada do ambiente de trabalho (`WorkerW` / Explorer).
@@ -263,17 +524,19 @@ fn wallpaper_try_reanchor(app: &tauri::AppHandle, origin: &'static str) {
 #[cfg(windows)]
 fn start_wallpaper_layer_watchdog(app: &tauri::AppHandle) {
     let h = app.clone();
+    let base = watchdog_base_interval_secs();
+    WATCHDOG_LOOP_SLEEP_SECS.store(base, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(8)).await;
+            let secs = WATCHDOG_LOOP_SLEEP_SECS
+                .load(Ordering::SeqCst)
+                .clamp(2, 600);
+            tokio::time::sleep(Duration::from_secs(secs)).await;
             if !DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
                 continue;
             }
-            let app = h.clone();
-            let app_for_cb = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                wallpaper_try_reanchor(&app_for_cb, "watchdog");
-            });
+            let app_for_cb = h.clone();
+            schedule_wallpaper_try_reanchor(&app_for_cb, "watchdog");
         }
     });
 }
@@ -287,12 +550,35 @@ fn apply_desktop_wallpaper_state_on_launch(app: &tauri::AppHandle) {
             if cfg.desktop_behind_icons {
                 DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
                 let _ = main.eval(JS_WALLPAPER_ENTER);
-                let _ = windows_desktop::set_behind_icons(
+                match windows_desktop::set_behind_icons(
                     &main,
                     true,
                     cfg.window_rounded_corners,
                     cfg.window_show_border,
-                );
+                ) {
+                    Ok(()) => {
+                        reset_wallpaper_anchor_fail_streak();
+                        let skip_snap = std::env::var("AGENDA_WALLPAPER_SKIP_WORK_AREA_SNAP")
+                            .map(|v| v == "1")
+                            .unwrap_or(false);
+                        if !skip_snap {
+                            if let Err(e) = windows_desktop::snap_wallpaper_window_to_monitor_work_area(
+                                &main,
+                                cfg.window_rounded_corners,
+                                cfg.window_show_border,
+                            ) {
+                                eprintln!(
+                                    "[agenda] workerw: snap à área útil no arranque: {e}"
+                                );
+                            }
+                        }
+                        notify_webview_parent_position_changed(&main);
+                    }
+                    Err(e) => {
+                        eprintln!("[agenda] workerw: arranque modo fundo: {e}");
+                        register_wallpaper_anchor_failure(app, "set_behind_icons_failed");
+                    }
+                }
                 if let Some(p) = app.get_webview_window("restore-pill") {
                     let _ = p.show();
                 } else {
@@ -478,6 +764,41 @@ fn clamp_main_window_to_visible_workspace<R: Runtime>(app: &AppHandle<R>) {
     let _ = win.center();
 }
 
+/// Após `apply_desktop_wallpaper_state_on_launch` / clamp, o HWND pode mover-se (WorkerW).
+/// Gravar estado no disco com atraso alinha `.window-state.json` à geometria final e reduz desvio no próximo arranque.
+const WINDOW_STATE_SAVE_AFTER_LAUNCH_MS: u64 = 500;
+
+fn schedule_window_state_save_after_launch_settle(app: &AppHandle) {
+    let h = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(WINDOW_STATE_SAVE_AFTER_LAUNCH_MS));
+        let h2 = h.clone();
+        let _ = h.run_on_main_thread(move || {
+            use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+            if let Err(e) = h2.save_window_state(StateFlags::all()) {
+                eprintln!("[agenda] window-state save após arranque: {e}");
+            }
+        });
+    });
+}
+
+/// Sem `RunEvent::Exit` (crash / kill), o plugin não grava; um intervalo longo aproxima o ficheiro à posição real.
+const WINDOW_STATE_PERIODIC_SAVE_SECS: u64 = 5 * 60;
+
+fn spawn_periodic_window_state_save(app: &AppHandle) {
+    let h = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(WINDOW_STATE_PERIODIC_SAVE_SECS));
+            let h2 = h.clone();
+            let _ = h.run_on_main_thread(move || {
+                use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+                let _ = h2.save_window_state(StateFlags::all());
+            });
+        }
+    });
+}
+
 #[cfg(windows)]
 fn position_restore_pill<R: Runtime>(
     main: &tauri::WebviewWindow<R>,
@@ -496,7 +817,10 @@ fn position_restore_pill<R: Runtime>(
 
 #[cfg(windows)]
 fn restore_desktop_wallpaper_mode_internal(app: &tauri::AppHandle) -> Result<(), String> {
+    reset_wallpaper_anchor_fail_streak();
     DESKTOP_WALLPAPER_ACTIVE.store(false, Ordering::SeqCst);
+    WATCHDOG_STABLE_STREAK.store(0, Ordering::SeqCst);
+    WATCHDOG_LOOP_SLEEP_SECS.store(watchdog_base_interval_secs(), Ordering::SeqCst);
     set_desktop_behind_flag(app, false);
     if let Some(pill) = app.get_webview_window("restore-pill") {
         let _ = pill.close();
@@ -628,10 +952,22 @@ async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
     if enabled {
         m.enable().map_err(|e| e.to_string())?;
         #[cfg(windows)]
-        windows_autostart::rewrite_run_value_with_quoted_exe(&app)?;
+        {
+            let cfg = read_config_file(&app).unwrap_or_default();
+            if cfg.autostart_use_watchdog {
+                windows_autostart::rewrite_run_value_with_watchdog(&app)?;
+            } else {
+                windows_autostart::rewrite_run_value_with_quoted_exe(&app)?;
+            }
+        }
         Ok(())
     } else {
-        m.disable().map_err(|e| e.to_string())
+        m.disable().map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        {
+            let _ = windows_autostart::remove_run_value(&app);
+        }
+        Ok(())
     }
 }
 
@@ -639,6 +975,21 @@ async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), Strin
 async fn autostart_is_enabled(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+/// `true` se `agenda-watchdog.exe` existe ao lado do executável principal (Windows).
+#[cfg(windows)]
+#[tauri::command]
+fn watchdog_binary_present() -> bool {
+    windows_autostart::watchdog_exe_path()
+        .map(|p| p.is_file())
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+fn watchdog_binary_present() -> bool {
+    false
 }
 
 #[tauri::command]
@@ -832,7 +1183,24 @@ async fn send_window_to_back(
             .window_rounded_corners
             .unwrap_or(cfg.window_rounded_corners);
         let border = chrome.window_show_border.unwrap_or(cfg.window_show_border);
-        windows_desktop::set_behind_icons(&main, true, rounded, border)?;
+        if let Err(e) = windows_desktop::set_behind_icons(&main, true, rounded, border) {
+            register_wallpaper_anchor_failure(&app, "set_behind_icons_failed");
+            return Err(e);
+        }
+        let skip_snap = std::env::var("AGENDA_WALLPAPER_SKIP_WORK_AREA_SNAP")
+            .map(|v| v == "1")
+            .unwrap_or(false);
+        if !skip_snap {
+            if let Err(e) = windows_desktop::snap_wallpaper_window_to_monitor_work_area(
+                &main,
+                rounded,
+                border,
+            ) {
+                eprintln!("[agenda] workerw: snap à área útil ao activar modo fundo: {e}");
+            }
+        }
+        reset_wallpaper_anchor_fail_streak();
+        notify_webview_parent_position_changed(&main);
         DESKTOP_WALLPAPER_ACTIVE.store(true, Ordering::SeqCst);
         set_desktop_behind_flag(&app, true);
 
@@ -979,6 +1347,33 @@ fn restore_desktop_wallpaper_mode(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let mut msg = String::from("panic ");
+            if let Some(loc) = info.location() {
+                use std::fmt::Write;
+                let _ = write!(
+                    &mut msg,
+                    "{}:{}:{} ",
+                    loc.file(),
+                    loc.line(),
+                    loc.column()
+                );
+            }
+            if let Some(s) = info.payload().downcast_ref::<&str>() {
+                msg.push_str(s);
+            } else if let Some(s) = info.payload().downcast_ref::<String>() {
+                msg.push_str(s);
+            } else {
+                msg.push_str("(payload não é string)");
+            }
+            workerw_log::append_line(&msg);
+            eprintln!("[agenda] panic (antes do handler por defeito)");
+            default_hook(info);
+        }));
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // Com modo «atrás dos ícones» ativo, não roubar foco nem trazer à frente:
@@ -986,7 +1381,7 @@ pub fn run() {
             #[cfg(windows)]
             {
                 if DESKTOP_WALLPAPER_ACTIVE.load(Ordering::SeqCst) {
-                    wallpaper_try_reanchor(app, "single_instance");
+                    schedule_wallpaper_try_reanchor(app, "single_instance");
                     return;
                 }
             }
@@ -1025,6 +1420,8 @@ pub fn run() {
         })
         .setup(|app| {
             apply_desktop_wallpaper_state_on_launch(app.handle());
+            schedule_window_state_save_after_launch_settle(app.handle());
+            spawn_periodic_window_state_save(app.handle());
             #[cfg(all(windows, not(debug_assertions)))]
             windows_autostart::fix_if_autostart_entry_exists(app.handle());
             #[cfg(all(windows, debug_assertions))]
@@ -1038,6 +1435,13 @@ pub fn run() {
             start_background_google_sync_worker(app.handle());
             #[cfg(windows)]
             start_wallpaper_layer_watchdog(app.handle());
+            #[cfg(windows)]
+            {
+                let h = app.handle().clone();
+                windows_desktop::spawn_wallpaper_setting_listener(move || {
+                    schedule_wallpaper_try_reanchor(&h, "setting_change");
+                });
+            }
             let handle = app.handle().clone();
             if let Err(e) = handle.deep_link().register_all() {
                 eprintln!("[agenda] deep-link register_all: {e}");
@@ -1089,7 +1493,8 @@ pub fn run() {
             restore_desktop_wallpaper_mode,
             sync_desktop_wallpaper_dwm_prefs,
             autostart_set,
-            autostart_is_enabled
+            autostart_is_enabled,
+            watchdog_binary_present
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1100,8 +1505,16 @@ pub fn run() {
                 let _ = h.run_on_main_thread(move || {
                     clamp_main_window_to_visible_workspace(&h_cb);
                     #[cfg(windows)]
-                    wallpaper_try_reanchor(&h_cb, "resumed");
+                    schedule_wallpaper_try_reanchor(&h_cb, "resumed");
                 });
+                #[cfg(windows)]
+                {
+                    let h_delayed = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(Duration::from_millis(650)).await;
+                        schedule_wallpaper_try_reanchor(&h_delayed, "resumed");
+                    });
+                }
             }
         });
 }

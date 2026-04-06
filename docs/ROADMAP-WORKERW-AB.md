@@ -25,7 +25,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Em `windows_desktop.rs` / chamadas desde `lib.rs`, registar (nível `debug` ou atrás de variável de ambiente / build `debug`): resultado de `workerw_behind_icons()` (HWND obtido ou “nenhum”), falhas de `SetParent` / `SetWindowPos`, e `GetParent` da janela principal comparado ao WorkerW esperado.
 - **Critérios de aceitação:** Com um build de debug, uma sequência de acções (mudar wallpaper, stress no Explorer) produz linhas de log suficientes para distinguir “WorkerW não encontrado” vs “parent incorrecto” vs “API Win32 falhou com código X”.
 
-- [ ] **A1.1** concluída
+- [x] **A1.1** concluída (logs em `windows_desktop` + `workerw.log`; `GetLastError` nas falhas de `SetParent`)
 
 #### Task A1.2 — Origem e contagem de reancoramentos
 
@@ -33,7 +33,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Cada chamada a `wallpaper_try_reanchor` (ou equivalente) deve poder ser etiquetada com uma **origem**: `watchdog`, `arranque`, `single_instance`, `comando_ipc`, `outro` (enum ou strings fixas). Opcional: contadores por sessão ou ring buffer dos últimos N eventos só em debug.
 - **Critérios de aceitação:** Num relatório de bug, consegue-se dizer “12 reancoramentos em 2 min, todos `watchdog`” ou “só no arranque”.
 
-- [ ] **A1.2** concluída
+- [x] **A1.2** concluída (origens `watchdog`, `single_instance`, `resumed`, `setting_change`; contadores por origem em `lib.rs`)
 
 #### Task A1.3 — Documentação de reprodução e logs
 
@@ -41,7 +41,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Secção nova ou subsecção em [MULTI-MONITOR.md](./MULTI-MONITOR.md): passos para testar wallpaper / slideshow / dois ecrãs; como activar logs; exemplo de 3–5 linhas “saudáveis” vs “anómalas”.
 - **Critérios de aceitação:** Seguir o doc permite repetir o cenário e saber que strings procurar no output.
 
-- [ ] **A1.3** concluída
+- [x] **A1.3** concluída ([MULTI-MONITOR.md](./MULTI-MONITOR.md) — diagnóstico, exemplos de linhas, matriz de testes)
 
 ---
 
@@ -53,7 +53,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Guardar o último `HWND` do WorkerW usado com sucesso. Antes de reancorar, obter `GetParent` da janela principal; se for o WorkerW actual **e** a janela cumprir um teste mínimo de consistência (parent + visibilidade), **não** executar o caminho pesado.
 - **Critérios de aceitação:** Com modo fundo estável, os logs mostram *skip* explícito na maioria dos ticks do watchdog, não reancoragem completa a cada intervalo.
 
-- [ ] **A2.1** concluída
+- [x] **A2.1** concluída
 
 #### Task A2.2 — `show` / `unminimize` só quando necessário
 
@@ -61,7 +61,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Rever `wallpaper_try_reanchor` (e chamadas similares): chamar `show()` / `unminimize()` apenas se a janela estiver minimizada ou invisível **e** for mesmo preciso para recuperar o modo fundo.
 - **Critérios de aceitação:** Teste visual: activar modo atrás dos ícones várias vezes seguidas; comparar gravação de ecrã antes/depois — flicker claramente menor quando “já estava bem parentada”.
 
-- [ ] **A2.2** concluída
+- [x] **A2.2** concluída
 
 #### Task A2.3 — Debounce de reancoragens na thread principal
 
@@ -69,7 +69,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Fila única na thread principal: pedidos de reancoragem dentro de uma janela (ex.: 300–500 ms) fundem-se numa só execução; o último pedido prevalece se houver conflito.
 - **Critérios de aceitação:** Simular rajada (ou inspeccionar logs) mostra uma única reancoragem pesada por debounce.
 
-- [ ] **A2.3** concluída
+- [x] **A2.3** concluída
 
 ---
 
@@ -81,7 +81,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Tornar o intervalo do loop (hoje ~8 s) configurável em dev (`env` ou constante de build). Opcional: se K ciclos seguidos não mudarem o HWND do WorkerW nem o parent, aumentar o intervalo até um tecto (backoff), ou manter intervalo longo até um “evento de suspeita”.
 - **Critérios de aceitação:** Valores por defeito documentados; em máquina estável, o timer não piora o uso de CPU face ao estado actual (ideal: melhora após backoff).
 
-- [ ] **A3.1** concluída
+- [x] **A3.1** concluída (env + backoff; ver [MULTI-MONITOR.md](./MULTI-MONITOR.md))
 
 #### Task A3.2 — (Opcional) Health check leve vs reancoragem pesada
 
@@ -89,7 +89,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Num ciclo lento, apenas `GetParent` + comparação; só se falhar, disparar caminho completo (`set_behind_icons`). Pode fundir-se com A2.1.
 - **Critérios de aceitação:** Em situação estável, a maioria dos ciclos só executa o check leve (visível nos logs da A1).
 
-- [ ] **A3.2** concluída
+- [x] **A3.2** concluída (`classify_wallpaper_heal` em `wallpaper_try_reanchor_impl` antes de `FullReparent`; maioria dos ticks com `skip=anchored_ok` / `heal=light_visibility`)
 
 ---
 
@@ -101,7 +101,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Investigar `WM_SETTINGCHANGE` (e outras mensagens úteis na versão Windows alvo); encaminhar para a thread principal um pedido **debounced** de reancoragem (reutilizar A2.3). Não retirar o watchdog até validação em campo.
 - **Critérios de aceitação:** Após mudar wallpaper, o tempo até a janela voltar a ser visível é igual ou melhor que só com watchdog; sem tempestade de reancoragens nos logs.
 
-- [ ] **A4.1** concluída
+- [x] **A4.1** concluída (listener `WM_SETTINGCHANGE` / `SPI_SETDESKWALLPAPER` + debounce; watchdog mantido)
 
 #### Task A4.2 — Retoma de sessão e coerência com `DESKTOP_WALLPAPER_ACTIVE`
 
@@ -109,7 +109,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Onde já existe `RunEvent::Resumed` ou clamp de janela, garantir que, se `DESKTOP_WALLPAPER_ACTIVE` e `desktop_behind_icons`, ocorre **uma** revalidação ordenada (sem conflito com o clamp de monitores — ver [MULTI-MONITOR.md](./MULTI-MONITOR.md)).
 - **Critérios de aceitação:** Teste manual: modo fundo activo → sleep → acordar → janela ainda no modo fundo sem precisar togglear a opção nas definições.
 
-- [ ] **A4.2** concluída
+- [x] **A4.2** concluída (reancoragem imediata + segunda após ~650 ms; clamp continua a ignorar modo fundo)
 
 ---
 
@@ -121,7 +121,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Tabela ou checklist: 1 monitor / 2 monitores; wallpaper fixo / slideshow; mudança de resolução; sleep-resume; reinício do Explorer (se aplicável). Para cada linha: resultado esperado + campo para assinar em releases.
 - **Critérios de aceitação:** Lista revista pelo menos uma vez antes de fechar a fase A.
 
-- [ ] **A5.1** concluída
+- [x] **A5.1** concluída (tabela em [MULTI-MONITOR.md](./MULTI-MONITOR.md#matriz-de-testes-manuais-workerw))
 
 #### Task A5.2 — Fallback quando o ancoramento falha de forma persistente
 
@@ -129,7 +129,7 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 - **Escopo:** Após N falhas consecutidas de reancoragem ou WorkerW indisponível durante M segundos: desactivar modo atrás dos ícones com persistência em config; opcionalmente notificação ou banner na UI; link para troubleshooting no doc.
 - **Critérios de aceitação:** Simular falha prolongada (ex.: VM) leva a fallback controlado, não silêncio nem crash.
 
-- [ ] **A5.2** concluída
+- [x] **A5.2** concluída
 
 ---
 
@@ -142,6 +142,8 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 ---
 
 ## Fase B — Qualidade de produto sem reescrever tudo em GPU
+
+**Escalonamento (tracking):** Se, após a fase A (incl. validação `IsWindow`, listener de wallpaper, fallback A5.2, `NotifyParentWindowPositionChanged` no WebView2), o modo fundo continuar **instável** nos builds Windows alvo (mudança de wallpaper, 24H2, etc.), priorizar **B0/B1** (duas superfícies) em vez de acumular mais heurísticas só no WorkerW + mesma WebView.
 
 **Meta:** O utilizador continua com **Tauri + UI web** para o núcleo; a parte **instável** (fundo atrás dos ícones) deixa de ser “a mesma janela WebView reparentada” para tudo.
 
@@ -182,7 +184,8 @@ Este documento descreve um **plano em duas camadas** alinhado a [MULTI-MONITOR.m
 ## Referências de código
 
 - `src-tauri/src/windows_desktop.rs` — descoberta de `WorkerW`, `SetParent`, DWM, região.
-- `src-tauri/src/lib.rs` — `wallpaper_try_reanchor`, `start_wallpaper_layer_watchdog`, estado `DESKTOP_WALLPAPER_ACTIVE`.
+- `src-tauri/src/lib.rs` — `wallpaper_try_reanchor`, `start_wallpaper_layer_watchdog`, `spawn_wallpaper_setting_listener`, fallback A5.2, notificação WebView2 após reparent; estado `DESKTOP_WALLPAPER_ACTIVE`.
+- `src-tauri/src/workerw_log.rs` — log persistente para diagnóstico.
 
 ---
 

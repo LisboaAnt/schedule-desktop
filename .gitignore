@@ -32,8 +32,10 @@ google-oauth-client-id.local
 # Bundle gerado (esbuild) — recriado em dev/build
 src/main.bundle.js
 
-# Tauri / Rust
+# Tauri / Rust (workspace: target na raiz do repo)
+/target/
 src-tauri/target/
+src-tauri/binaries/*.exe
 
 # Assinatura de atualizações (NUNCA versionar a chave privada)
 .tauri/signing.key

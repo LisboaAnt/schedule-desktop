@@ -44,7 +44,10 @@ Quando o scaffold Tauri existir no repositório (Fase 0):
 ```powershell
 cd E:\github\Calendario-app
 npm install
+npm run prepare-watchdog
 ```
+
+O último comando compila o crate `agenda-watchdog` e copia o `.exe` para `src-tauri/binaries/` — necessário para o `tauri-build` validar o `externalBin` antes do primeiro `cargo build` do pacote principal.
 
 ### 3. Modo desenvolvimento (hot reload + janela)
 
@@ -60,7 +63,7 @@ npm run tauri dev
 npm run tauri build
 ```
 
-Saída em `src-tauri/target/release/` e artefatos de instalador conforme configuração do Tauri.
+Saída em `target/release/` (workspace na raiz do repo), artefatos de instalador conforme o Tauri, e o vigia empacotado como sidecar — ver [WATCHDOG.md](./WATCHDOG.md).
 
 ---
 
@@ -91,8 +94,28 @@ Ou seja: **mantém o Docker** para o que já usas (outros projetos, CI); para **
 
 ---
 
+## Vigia (`agenda-watchdog`), wallpaper e modo «atrás dos ícones» (WorkerW)
+
+O vigia **só** relança o executável principal quando o processo filho termina com **código de saída diferente de 0** (falha). Uma saída com **0** é tratada como fecho normal — o vigia **termina** e não volta a abrir a app.
+
+Isto significa que, se ao **mudar o wallpaper** (ou noutro cenário Explorer/WebView2) o processo morrer com código **0**, ou se uma **segunda instância** sair logo com **0** (ex.: corrida com *single-instance*), o vigia **não** cumpre a expectativa de «reabrir sempre». Não substitui o endurecimento do WorkerW nem a **fase B** (duas superfícies) descrita em [ROADMAP-WORKERW-AB.md](./ROADMAP-WORKERW-AB.md).
+
+**Variáveis opcionais** para testes (atraso antes de relançar após falha; modo experimental que relança também após saída 0) estão em [WATCHDOG.md](./WATCHDOG.md).
+
+### Diagnosticar: ficheiro `watchdog.log`
+
+1. Com o vigia a correr, reproduz o problema (ex.: mudar wallpaper com a app atrás dos ícones).
+2. Abre `%LOCALAPPDATA%\com.calendario.widget\logs\watchdog.log` (ou cola no Explorador: `shell:Local AppData\com.calendario.widget\logs\watchdog.log`).
+3. Procura linhas `child_exit` e `session_end`:
+   - `child_exit ... success=true code=Some(0)` seguido de `session_end clean_exit` — o vigia saiu porque interpretou **fecho limpo**; não há relançamento com a política por defeito.
+   - `child_exit ... success=false code=Some(...)` — houve falha; o vigia deve aplicar backoff e voltar a lançar até ao máximo de tentativas.
+
+---
+
 ## Documentação relacionada
 
 - [PLANEJAMENTO.md](./PLANEJAMENTO.md) — fases do produto  
 - [TAREFAS-POR-CICLO.md](./TAREFAS-POR-CICLO.md) — checklist por fase  
 - [ARQUITETURA-E-STACK.md](./ARQUITETURA-E-STACK.md) — stack técnica  
+- [WATCHDOG.md](./WATCHDOG.md) — vigia, variáveis de ambiente, limitações  
+- [ROADMAP-WORKERW-AB.md](./ROADMAP-WORKERW-AB.md) — WorkerW e fase B  

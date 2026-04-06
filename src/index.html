@@ -12,7 +12,7 @@
     />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="event-editor-google.css" />
-    <script type="module" src="/main.bundle.js" defer></script>
+    <script type="module" src="main.bundle.js" defer></script>
   </head>
   <body class="theme-dark view-widget">
     <div id="app" class="shell">
@@ -239,6 +239,19 @@
                     <input type="checkbox" id="chk-start-windows" />
                     <span class="settings-label settings-label--inline">Iniciar com o Windows</span>
                   </label>
+                  <label
+                    class="field field-checkbox-row settings-field settings-field--row"
+                    id="chk-autostart-watchdog-label"
+                  >
+                    <input type="checkbox" id="chk-autostart-watchdog" />
+                    <span class="settings-label settings-label--inline"
+                      >Vigia: reinício após falha (usa agenda-watchdog.exe)</span
+                    >
+                  </label>
+                  <p class="settings-callout settings-callout--subtle" id="autostart-watchdog-hint">
+                    Com o vigia, o arranque do Windows lança o vigia, que por sua vez abre a Agenda; se o processo
+                    terminar com erro, tenta voltar a abrir (limite e backoff). Saída normal não reinicia em loop.
+                  </p>
                   <label class="field field-checkbox-row settings-field settings-field--row">
                     <input type="checkbox" id="chk-close-to-tray" />
                     <span class="settings-label settings-label--inline">Ao fechar, ocultar na bandeja (não sair)</span>

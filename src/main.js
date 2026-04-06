@@ -46,7 +46,7 @@ let agendaView = "month";
 /** Data âncora para navegação (dia em foco) */
 let cursor = new Date();
 
-/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean, windowRoundedCorners?: boolean, windowShowBorder?: boolean }} */
+/** @type {{ viewMode: string, theme: string, widgetOpacity: number, agendaView?: string, autoSyncMinutes?: number, closeToTray?: boolean, windowRoundedCorners?: boolean, windowShowBorder?: boolean, autostartUseWatchdog?: boolean }} */
 let appConfig = {
   viewMode: "widget",
   theme: "dark",
@@ -56,6 +56,7 @@ let appConfig = {
   closeToTray: false,
   windowRoundedCorners: true,
   windowShowBorder: true,
+  autostartUseWatchdog: false,
 };
 
 /** @type {ReturnType<typeof setInterval> | null} */
@@ -946,8 +947,20 @@ async function persistConfig() {
           : Boolean(prev.closeToTray),
       windowRoundedCorners: appConfig.windowRoundedCorners !== false,
       windowShowBorder: appConfig.windowShowBorder !== false,
+      autostartUseWatchdog:
+        typeof appConfig.autostartUseWatchdog === "boolean"
+          ? appConfig.autostartUseWatchdog
+          : Boolean(prev.autostartUseWatchdog),
     },
   });
+  const startWin = document.getElementById("chk-start-windows");
+  if (startWin?.checked) {
+    try {
+      await invoke("autostart_set", { enabled: true });
+    } catch (_) {
+      /* ignorar */
+    }
+  }
 }
 
 async function loadConfig() {
@@ -966,6 +979,7 @@ async function loadConfig() {
       closeToTray: Boolean(c.closeToTray),
       windowRoundedCorners: c.windowRoundedCorners !== false,
       windowShowBorder: c.windowShowBorder !== false,
+      autostartUseWatchdog: Boolean(c.autostartUseWatchdog),
     };
   } catch (e) {
     console.warn("get_app_config", e);
@@ -995,6 +1009,9 @@ async function loadConfig() {
 
   const closeTray = document.getElementById("chk-close-to-tray");
   if (closeTray) closeTray.checked = Boolean(appConfig.closeToTray);
+
+  const wd = document.getElementById("chk-autostart-watchdog");
+  if (wd) wd.checked = Boolean(appConfig.autostartUseWatchdog);
 
   const chkRounded = document.getElementById("chk-window-rounded");
   if (chkRounded) chkRounded.checked = appConfig.windowRoundedCorners !== false;
@@ -1063,6 +1080,29 @@ async function refreshAutostartCheckbox() {
     console.warn("autostart_is_enabled", e);
     cb.disabled = true;
     cb.title = "Indisponível nesta plataforma ou build.";
+  }
+  await refreshAutostartWatchdogUi();
+}
+
+async function refreshAutostartWatchdogUi() {
+  const chk = document.getElementById("chk-autostart-watchdog");
+  const hint = document.getElementById("autostart-watchdog-hint");
+  const label = document.getElementById("chk-autostart-watchdog-label");
+  if (!chk) return;
+  try {
+    const ok = await invoke("watchdog_binary_present");
+    chk.disabled = !ok;
+    const msg = ok
+      ? ""
+      : "O agenda-watchdog.exe não está junto a este executável (build sem vigia ou só desenvolvimento).";
+    chk.title = msg;
+    if (label) label.title = msg;
+    if (hint) {
+      hint.style.opacity = ok ? "" : "0.65";
+    }
+  } catch (e) {
+    console.warn("watchdog_binary_present", e);
+    chk.disabled = true;
   }
 }
 
@@ -1382,6 +1422,15 @@ window.addEventListener("DOMContentLoaded", () => {
         /* ignorar */
       }
     });
+    tauriEvent.listen("calendar://wallpaper-fallback", (ev) => {
+      const reason = ev?.payload?.reason ?? "";
+      console.warn("[agenda] modo fundo desactivado automaticamente", reason);
+      if (typeof window !== "undefined" && window.alert) {
+        window.alert(
+          "O modo «atrás dos ícones» foi desligado automaticamente porque o Windows não conseguiu manter a janela ancorada. Pode voltar a activá-lo nas definições."
+        );
+      }
+    });
   }
 
   document.querySelectorAll("[data-action='period-prev']").forEach((el) => {
@@ -1638,6 +1687,14 @@ window.addEventListener("DOMContentLoaded", () => {
       alert(err?.message || String(err));
       input.checked = !want;
     }
+    await refreshAutostartWatchdogUi();
+  });
+
+  document.getElementById("chk-autostart-watchdog")?.addEventListener("change", async (e) => {
+    const input = /** @type {HTMLInputElement} */ (e.target);
+    appConfig.autostartUseWatchdog = input.checked;
+    await persistConfig();
+    await refreshAutostartWatchdogUi();
   });
 
   window.addEventListener("focus", () => {

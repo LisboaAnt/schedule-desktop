@@ -31,16 +31,19 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: "."
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare agenda-watchdog (externalBin para tauri-build)
+        run: npm run prepare-watchdog
+
       - name: Clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Cargo test
-        run: cargo test --manifest-path src-tauri/Cargo.toml --no-fail-fast
+        run: cargo test --workspace --no-fail-fast
 
       - name: Build Tauri (release, sem instaladores)
         run: npm run build:ci
@@ -50,6 +53,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agenda-windows-x64
-          path: src-tauri/target/release/calendario-app.exe
+          path: |
+            target/release/calendario-app.exe
+            target/release/agenda-watchdog.exe
           if-no-files-found: error
           retention-days: 30
